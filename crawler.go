@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,10 +18,11 @@ import (
 )
 
 const (
-	RATBVDomain    = "https://www.ratbv.ro/"
-	interestingURL = "https://www.ratbv.ro/afisaje/"
-	StationStr     = "Staţia:"
-	LeftIFrameName = "/div_list_ro.html"
+	RATBVDomain         = "https://www.ratbv.ro/"
+	interestingURL      = "https://www.ratbv.ro/afisaje/"
+	StationStr          = "Staţia:"
+	LeftIFrameName      = "/div_list_ro.html"
+	excludeMetropolitan = true
 )
 
 type Direction int
@@ -55,11 +57,21 @@ func (d *Direction) Find(routeName string) string {
 func (d Direction) String() string {
 	switch d {
 	case Tour:
-		return "Tour"
+		return "dus"
 	case Retour:
-		return "Retour"
+		return "intors"
 	}
 	return "NOT SET"
+}
+
+func (d Direction) Reverse() Direction {
+	switch d {
+	case Tour:
+		return Retour
+	case Retour:
+		return Tour
+	}
+	return NoDirection
 }
 
 func (d *DOW) Find(from string) {
@@ -107,55 +119,6 @@ func (h *HoursAndMinute) MinutesBetween(h2 *HoursAndMinute) int {
 	return secondInMinutes - firstInMinutes
 }
 
-type Schedule struct {
-	DayOfTheWeek    DOW               `json:"dayOfTheWeek"`
-	HoursAndMinutes []*HoursAndMinute `json:"hoursAndMinutes,omitempty"`
-}
-
-type Route struct {
-	NumericName string      `json:"-"`
-	KeyName     string      `json:"-"`
-	Direction   Direction   `json:"-"`
-	Terminals   []string    `json:"-"`
-	Schedule    []*Schedule `json:"-"`
-}
-
-type StationLink struct {
-	DisplayName string    `json:"name"`
-	Direction   Direction `json:"dir,omitempty"`
-}
-
-type RoutesAndLinks struct {
-	Routes []*Route       `json:"-"`
-	Busses []string       `json:"busses"`
-	Links  []*StationLink `json:"links,omitempty"`
-}
-
-type StationData struct {
-	DisplayName string                        `json:"-"`
-	Directions  map[Direction]*RoutesAndLinks `json:"directions,omitempty"`
-}
-
-type StationAndSchedule struct {
-	Name     string      `json:"name"`
-	Schedule []*Schedule `json:"schedule,omitempty"`
-}
-
-type RouteDirections struct {
-	Terminals []string              `json:"terminals"`
-	Stations  []*StationAndSchedule `json:"stations,omitempty"`
-}
-
-type RouteData struct {
-	NumericName string                         `json:"-"`
-	Directions  map[Direction]*RouteDirections `json:"dir"`
-}
-
-type StationsAndBusses struct {
-	StationsMap map[string]*StationData `json:"stations"`
-	BussesMap   map[string]*RouteData   `json:"busses"`
-}
-
 var root string
 var addReverseLinks *bool
 var stations sync.Map
@@ -196,10 +159,11 @@ func isValidExtension(link string) bool {
 	return true
 }
 
-func isValidLink(link string) bool {
+func isValidLink(link string, links []string) bool {
 	if isInternLink(link) &&
 		!isStart(link) &&
 		isValidExtension(link) &&
+		!doesLinkExist(link, links) &&
 		strings.Contains(link, "afisaje") {
 		return true
 	}
@@ -421,6 +385,7 @@ func (b *BusStops) AddBusToSchedule(bus BusName, direction Direction, station St
 	if !has {
 		b.Schedules[bus][direction][station][dow] = make([]HoursAndMinute, 0)
 	}
+
 	b.Schedules[bus][direction][station][dow] = append(b.Schedules[bus][direction][station][dow], HoursAndMinute{
 		Hour:   hour,
 		Minute: minute,
@@ -454,6 +419,50 @@ func getLinks(fromURL string) (Page, error) {
 
 	var direction Direction
 	lineName := direction.Find(routeName)
+
+	if excludeMetropolitan {
+		switch lineName {
+		case "110-dus",
+			"110-intors",
+			"130-dus",
+			"130-intors",
+			"131-dus",
+			"131-intors",
+			"210-dus",
+			"210-intors",
+			"220-dus",
+			"220-intors",
+			"310-dus",
+			"310-intors",
+			"320-dus",
+			"320-intors",
+			"410-dus",
+			"410-intors",
+			"411-dus",
+			"411-intors",
+			"412-dus",
+			"412-intors",
+			"420-dus",
+			"420-intors",
+			"511-dus",
+			"511-intors",
+			"520-dus",
+			"520-intors",
+			"540-dus",
+			"540-intors",
+			"610-dus",
+			"610-intors",
+			"611-dus",
+			"611-intors",
+			"612-dus",
+			"612-intors",
+			"620-dus",
+			"620-intors",
+			"810-dus",
+			"810-intors":
+			return page, nil
+		}
+	}
 
 	if strings.HasSuffix(fromURL, LeftIFrameName) { // in case we're on the left iframe, we're going to collect station
 		routeName = strings.ReplaceAll(routeName, LeftIFrameName, "") // route name is different to reflect direction
@@ -512,6 +521,7 @@ func getLinks(fromURL string) (Page, error) {
 							collectText(n, textCollector)
 							strValue := textCollector.String()
 							if strValue != "Minutul" {
+								// it doesn't work with current terminals
 								minute := strings.ReplaceAll(strValue, "*", "")
 								atMinute, err := strconv.Atoi(minute)
 								if err != nil {
@@ -526,37 +536,39 @@ func getLinks(fromURL string) (Page, error) {
 			case "a": // for links ("a" tag) we're looking for new candidates to explore
 				candidateURL := ""
 				for _, a := range n.Attr {
-					if a.Key == "href" {
-						link, err := resp.Request.URL.Parse(a.Val)
-						if err == nil {
-							saneURL := sanitizeUrl(link.String())
-							if isValidLink(saneURL) {
-								candidateURL = saneURL
-							}
+					if a.Key != "href" {
+						continue
+					}
+
+					if link, err := resp.Request.URL.Parse(a.Val); err == nil {
+						saneURL := sanitizeUrl(link.String())
+						if isValidLink(saneURL, page.Links) {
+							candidateURL = saneURL
 						}
 					}
+
 				}
 
-				if len(candidateURL) > 0 && !doesLinkExist(candidateURL, page.Links) && !inOtherLanguages(candidateURL) { // pages in different languages get ignored
+				if len(candidateURL) > 0 && !inOtherLanguages(candidateURL) { // pages in different languages get ignored
 					page.Links = append(page.Links, candidateURL)
 				}
 
 			case "frame": // same for frame candidate
 				candidateURL := ""
 				for _, a := range n.Attr {
-					if a.Key == "src" {
-						link, err := resp.Request.URL.Parse(a.Val)
-						if err == nil {
-							saneURL := sanitizeUrl(link.String())
-							if isValidLink(saneURL) {
-								candidateURL = saneURL
-							}
+					if a.Key != "src" {
+						continue
+					}
+
+					if link, err := resp.Request.URL.Parse(a.Val); err == nil {
+						saneURL := sanitizeUrl(link.String())
+						if isValidLink(saneURL, page.Links) {
+							candidateURL = saneURL
 						}
 					}
 				}
 
 				if len(candidateURL) > 0 &&
-					!doesLinkExist(candidateURL, page.Links) &&
 					!strings.HasSuffix(candidateURL, "pagina_goala.html") && // we're excluding the "style"
 					strings.HasSuffix(candidateURL, "_ro.html") { // we're using only romanian
 					page.Links = append(page.Links, candidateURL)
@@ -601,120 +613,186 @@ func check(e error) {
 	}
 }
 
+type StationNameAndWeight struct {
+	Station StationName `json:"station"`
+	Weight  int         `json:"weight"`
+}
+
+type BussesAndLinks struct {
+	Busses []BusName              `json:"busses,omitempty"`
+	Links  []StationNameAndWeight `json:"links,omitempty"`
+}
+
+type BussesWithTerminalsAndStations struct {
+	Terminals []StationName                            `json:"terminals,omitempty"`
+	Stations  map[StationName]map[DOW][]HoursAndMinute `json:"stations,omitempty"`
+}
+
+type StationsAndBusses struct {
+	Stations map[StationName]map[Direction]*BussesAndLinks             `json:"stations"`
+	Busses   map[BusName]map[Direction]*BussesWithTerminalsAndStations `json:"busses"`
+}
+
+type WeightKeys struct {
+	Station string
+	Pair    string
+}
+
 func saveJsonData() {
+
 	dataToSave := StationsAndBusses{
-		StationsMap: make(map[string]*StationData),
-		BussesMap:   make(map[string]*RouteData),
+		Stations: make(map[string]map[Direction]*BussesAndLinks),
+		Busses:   make(map[BusName]map[Direction]*BussesWithTerminalsAndStations),
 	}
-	stations.Range(func(key, value any) bool {
-		stationData := value.(*StationData)
-		for direction, routesAndLinks := range stationData.Directions {
-			routesAndLinks.Links = make([]*StationLink, 0)
-			for _, r := range routesAndLinks.Routes {
-				// keep it short (just bus numbers, we have direction field to look for schedule)
-				routesAndLinks.Busses = append(routesAndLinks.Busses, r.NumericName)
-				// find edge relations (next station)
-				rawRoute, has := routesStationsList.Load(r.KeyName)
-				if !has {
-					panic("route " + r.KeyName + " not found")
-				}
-				route := rawRoute.(*RouteData)
 
-				if len(route.NumericName) == 0 {
-					route.NumericName = r.NumericName
-				} else if route.NumericName != r.NumericName {
-					fmt.Println("numeric name should be equal", route.NumericName, r.NumericName)
+	weightsMap := make(map[WeightKeys]int)
+
+	for stationName, stationData := range busStops.Stations {
+		if _, has := dataToSave.Stations[stationName]; !has {
+			dataToSave.Stations[stationName] = make(map[Direction]*BussesAndLinks)
+		}
+
+		for direction, busses := range stationData {
+			if _, has := dataToSave.Stations[stationName][direction]; !has {
+				dataToSave.Stations[stationName][direction] = &BussesAndLinks{
+					Busses: make([]BusName, 0),
+					Links:  make([]StationNameAndWeight, 0),
 				}
-				if len(route.Directions[direction].Terminals) == 0 {
-					p := route.Directions[direction]
-					p.Terminals = r.Terminals
+			}
+
+			for _, bus := range busses {
+				dataToSave.Stations[stationName][direction].Busses = append(dataToSave.Stations[stationName][direction].Busses, bus)
+				busKey := fmt.Sprintf("%s-%s", strings.ToLower(bus), direction)
+				if _, has := busStops.Busses[busKey][direction]; !has {
+					panic("bus key not found " + bus + direction.String())
 				}
 
-				// cleanup : schedule doesn't have data ("nu circula"), before adding schedule to the bus
-				for i, s := range r.Schedule {
-					if len(s.HoursAndMinutes) == 0 {
-						// delete with gc
-						if i < len(r.Schedule)-1 {
-							copy(r.Schedule[i:], r.Schedule[i+1:])
+				i := len(busStops.Busses[busKey][direction]) - 1
+				for i >= 0 {
+					station := busStops.Busses[busKey][direction][i]
+
+					if stationName == station {
+						// checking station isn't already linked to the next station
+						hasLink := false
+						for _, link := range dataToSave.Stations[stationName][direction].Links {
+							if link.Station == busStops.Busses[busKey][direction][i+1] {
+								hasLink = true
+								break
+							}
 						}
-						r.Schedule[len(r.Schedule)-1] = nil // or the zero value of T
-						r.Schedule = r.Schedule[:len(r.Schedule)-1]
-						break
-					}
-				}
 
-				for i, station := range route.Directions[direction].Stations {
-					if station.Name == stationData.DisplayName {
-						// transfer schedule to the bus
-						station.Schedule = r.Schedule
+						// all ok, linking (direction is the same)
+						if !hasLink {
+							linkedStationName := busStops.Busses[busKey][direction][i+1]
 
-						// TODO : if it's a terminal (end of the route), take the reverse station
-						// add next station (link) to the station
-						if i < len(route.Directions[direction].Stations)-1 {
-							// lookup so we don't have duplicates
-							hasLink := false
-							for _, link := range routesAndLinks.Links {
-								if link.DisplayName == route.Directions[direction].Stations[i+1].Name {
-									hasLink = true
-									break
+							// weight calculus
+							schedules1 := busStops.Schedules[busKey][direction][stationName][WeekDays]
+							schedules2 := busStops.Schedules[busKey][direction][linkedStationName][WeekDays]
+
+							minMinutes := math.MaxInt
+							if len(schedules1) == len(schedules2) {
+								for j := range schedules1 {
+									minutes := schedules1[j].MinutesBetween(&schedules2[j])
+									if minutes >= 0 {
+										if minMinutes > minutes {
+											minMinutes = minutes
+										}
+									}
+								}
+							} else {
+								// terminal station
+								var has bool
+								if minMinutes, has = weightsMap[WeightKeys{
+									Station: stationName,
+									Pair:    station,
+								}]; !has {
+									terminalKey := fmt.Sprintf("%s-%s", strings.ToLower(bus), direction.Reverse())
+									if _, has := busStops.Busses[terminalKey][direction.Reverse()]; !has {
+										panic("bus key (reverse) not found " + bus + direction.Reverse().String())
+									}
+
+									terminalSchedules := busStops.Schedules[terminalKey][direction.Reverse()][linkedStationName][WeekDays]
+									if len(schedules1) == len(terminalSchedules) {
+										for j := range schedules1 {
+											minutes := schedules1[j].MinutesBetween(&terminalSchedules[j])
+											if minutes >= 0 {
+												if minMinutes > minutes {
+													minMinutes = minutes
+												}
+											}
+										}
+										if minMinutes == math.MaxInt || minMinutes == 0 {
+											fmt.Printf("%s in directia %s in statia %s", bus, direction, stationName)
+											fmt.Printf(" urmatoarea statie %s [%d vs %d]\n", linkedStationName, len(schedules1), len(terminalSchedules))
+											minMinutes = -10
+										}
+									} else {
+										// these routes are not linear (circular route)
+										minMinutes = -10
+									}
 								}
 							}
-							if !hasLink {
-								routesAndLinks.Links = append(routesAndLinks.Links, &StationLink{
-									DisplayName: route.Directions[direction].Stations[i+1].Name,
-									Direction:   direction,
-								})
+
+							if _, has := weightsMap[WeightKeys{
+								Station: stationName,
+								Pair:    station,
+							}]; !has {
+								weightsMap[WeightKeys{
+									Station: stationName,
+									Pair:    station,
+								}] = minMinutes
 							}
+
+							dataToSave.Stations[stationName][direction].Links = append(dataToSave.Stations[stationName][direction].Links,
+								StationNameAndWeight{
+									Station: linkedStationName,
+									Weight:  minMinutes,
+								},
+							)
 						}
+
+						break
+					}
+
+					i--
+				}
+			}
+		}
+	}
+
+	replacer := strings.NewReplacer("-dus", "", "-intors", "")
+	for busName, directionsMap := range busStops.Schedules {
+		bus := replacer.Replace(busName)
+		if _, has := dataToSave.Busses[bus]; !has {
+			dataToSave.Busses[bus] = make(map[Direction]*BussesWithTerminalsAndStations)
+		}
+		for direction, stationsMap := range directionsMap {
+			if _, has := dataToSave.Busses[bus][direction]; !has {
+				dataToSave.Busses[bus][direction] = &BussesWithTerminalsAndStations{
+					Terminals: make([]StationName, 0),
+					Stations:  make(map[StationName]map[DOW][]HoursAndMinute),
+				}
+			}
+
+			for _, terminal := range busStops.Terminals[busName][direction] {
+				hasTerminal := false
+				for _, existingTerminal := range dataToSave.Busses[bus][direction].Terminals {
+					if existingTerminal == terminal {
+						hasTerminal = true
 						break
 					}
 				}
 
-				// add the reverse relation if needed and requested
-				if *addReverseLinks {
-					hasReverseLink := false
-					reverseDirection := Tour
-					if direction == Tour {
-						reverseDirection = Retour
-					}
-					for _, link := range routesAndLinks.Links {
-						if link.DisplayName == stationData.DisplayName && link.Direction == reverseDirection {
-							hasReverseLink = true
-							break
-						}
-					}
-					if !hasReverseLink {
-						routesAndLinks.Links = append(routesAndLinks.Links, &StationLink{
-							DisplayName: stationData.DisplayName,
-							Direction:   reverseDirection,
-						})
-					}
+				if !hasTerminal {
+					dataToSave.Busses[bus][direction].Terminals = append(dataToSave.Busses[bus][direction].Terminals, terminal)
 				}
+			}
 
+			for stationName, schedulesMap := range stationsMap {
+				dataToSave.Busses[bus][direction].Stations[stationName] = schedulesMap
 			}
 		}
-
-		dataToSave.StationsMap[key.(string)] = stationData
-		return true
-	})
-
-	routesStationsList.Range(func(key, value any) bool {
-		routeData := value.(*RouteData)
-
-		// bus not found in the saving map. creating new map entry
-		if _, has := dataToSave.BussesMap[routeData.NumericName]; !has {
-			dataToSave.BussesMap[routeData.NumericName] = &RouteData{
-				NumericName: routeData.NumericName,
-				Directions:  make(map[Direction]*RouteDirections),
-			}
-		}
-
-		// transfer directions data
-		for k, v := range routeData.Directions {
-			dataToSave.BussesMap[routeData.NumericName].Directions[k] = v
-		}
-		return true
-	})
+	}
 
 	dataJSON, err := json.MarshalIndent(dataToSave, "", "\t")
 	check(err)
@@ -722,7 +800,7 @@ func saveJsonData() {
 	err = os.WriteFile("data.json", dataJSON, 0644)
 	check(err)
 
-	fmt.Printf("\n%d busses and %d stations saved", len(dataToSave.BussesMap)/2, len(dataToSave.StationsMap))
+	fmt.Printf("\n%d busses and %d stations saved", len(dataToSave.Busses), len(dataToSave.Stations))
 }
 
 func main() {
@@ -805,7 +883,7 @@ func main() {
 		Schedules map[BusName]map[Direction]map[StationName]map[DOW][]HoursAndMinute // map of bus name, direction, station names, day of the week and slice of schedules
 	}
 
-	var save savedObject
+	save := savedObject{}
 	save.Stations = busStops.Stations
 	save.Terminals = busStops.Terminals
 	save.Busses = busStops.Busses
@@ -817,6 +895,6 @@ func main() {
 	encoder := gob.NewEncoder(file)
 	err = encoder.Encode(save)
 	check(err)
-	//createSitemap(indexed) // just because we can
-	//saveJsonData()
+
+	saveJsonData()
 }
