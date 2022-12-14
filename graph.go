@@ -1,4 +1,4 @@
-package main
+package bvbus
 
 import (
 	"math"
