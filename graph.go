@@ -1,6 +1,7 @@
 package bvbus
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -25,7 +26,7 @@ func (l *LatLong) DistanceToCoordinate(lat, lon float64) float64 {
 type Stop struct {
 	Name      string
 	Direction Direction
-	Busses    []string
+	Busses    []string // TODO : using a map will facilitate finding the common elements
 	Links     []Path
 }
 
@@ -204,8 +205,9 @@ func (g *Graph) getShortestPath(startNode, endNode *Stop) ([]*Stop, int) {
 type Solution struct {
 	Start    *Stop
 	End      *Stop
-	Stops    []*Stop `json:"stops"`
-	Duration int     `json:"durations"`
+	Stops    []*Stop    `json:"stops"`
+	Duration int        `json:"durations"`
+	Busses   [][]string `json:"busses"`
 }
 
 type Result struct {
@@ -221,11 +223,27 @@ func (g *Graph) GetShortestPath(from, to string) *Result {
 				continue
 			}
 
+			// find common busses
+			commonBusses := make([][]string, len(path)-1, len(path)-1)
+			for idx := len(path) - 1; idx > 0; idx-- {
+				commonBusses[idx-1] = make([]string, 0)
+				for _, prevBus := range path[idx].Busses {
+					for _, nextBus := range path[idx-1].Busses {
+						if prevBus == nextBus {
+							fmt.Println("bus", nextBus, "station", path[idx].Name, path[idx-1].Name)
+							commonBusses[idx-1] = append(commonBusses[idx-1], nextBus)
+							break
+						}
+					}
+				}
+			}
+
 			result.Solutions = append(result.Solutions, Solution{
 				Start:    source,
 				End:      destination,
 				Stops:    path,
 				Duration: distance,
+				Busses:   commonBusses,
 			})
 		}
 	}
