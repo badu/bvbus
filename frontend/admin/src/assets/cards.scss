@@ -1,0 +1,201 @@
+
+
+$black: #000000;
+$yellow: #FFFF00;
+$cardHeight: 400px;
+$cardWidth: 280px;
+$containerWidth: 800px;
+
+$boxShadow: 0px 0px 24px 6px rgba(white, 0.08);
+
+@mixin center {
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+body {
+  margin: 0px;
+  overflow: hidden;
+  padding: 0px;
+
+  h1, p, button, a {
+    font-family: 'TheLedDisplaySt', sans-serif;
+    margin: 0px;
+    padding: 0px;
+  }
+}
+
+#cards-wrapper {
+  @include center;
+  padding: 50px;
+
+  #cards {
+    position: relative;
+    width: $containerWidth;
+
+    .card-wrapper {
+      height: $cardHeight;
+      position: absolute;
+      top: 50%;
+      transition: all 0.25s;
+      width: $cardWidth;
+
+      &:not(.selected):hover {
+        cursor: pointer;
+
+        .card {
+          top: 50%;
+
+          .icon {
+            i {
+              color: $yellow;
+            }
+          }
+        }
+      }
+
+      &:nth-child(n) {
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      &.selected {
+        height: calc(2 * $cardHeight);
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: calc(2 * $cardWidth);
+
+        .card {
+          height: calc(2 * $cardHeight);
+          width: calc(2 * $cardWidth);
+
+          .icon {
+            top: calc($cardWidth / 14);
+            transform: translate(-50%, 0px);
+
+            i {
+              color: $yellow;
+            }
+          }
+        }
+      }
+
+      .card {
+        background-color: $black;
+        border-radius: calc($cardWidth / 14);
+        box-shadow: $boxShadow;
+        height: $cardHeight;
+        overflow: hidden;
+        position: relative;
+        top: 50%;
+        transform: translateY(-50%);
+        transition: all 0.25s;
+        width: $cardWidth;
+
+        .icon {
+          @include center;
+          text-align: center;
+          transition: all 0.25s;
+
+          i {
+            color: $yellow;
+            font-size: 6em;
+            height: calc($cardHeight / 4);
+            line-height: calc($cardHeight / 4);
+            width: calc($cardWidth / 4);
+          }
+        }
+
+        .content {
+          animation: fadeIn 1s;
+          margin-top: calc($cardHeight / 3);
+
+          .title {
+            h1 {
+              color: $yellow;
+              font-size: 3em;
+              font-weight: 300;
+              text-align: center;
+            }
+          }
+
+          .text {
+            margin-top: 100px;
+            padding: calc($cardWidth / 14) calc($cardWidth / 7);
+
+            p {
+              color: $yellow;
+              font-size: 2em;
+              font-weight: 100;
+              text-align: center;
+            }
+          }
+
+          .close-button {
+            background-color: black;
+            border: none;
+            border-radius: 100px;
+            bottom: calc($cardWidth / 14);
+            box-shadow: $boxShadow;
+            cursor: pointer;
+            height: 50px;
+            left: 50%;
+
+            padding: 0px;
+            position: absolute;
+            transform: translateX(-50%);
+            transition: all 0.25s;
+            width: 50px;
+
+            &:hover,
+            &:focus {
+              bottom: 25px;
+
+              i {
+                color: $yellow;
+              }
+            }
+
+            i {
+              color: $yellow;
+              font-size: 1.5em;
+              height: 50px;
+              line-height: 50px;
+              text-align: center;
+              width: 50px;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+@media(max-width: 1200px) {
+  #app {
+    #cards-wrapper {
+      transform: translate(-50%, -50%) scale(0.7);
+    }
+  }
+}
+
+@media(max-width: 800px) {
+  #app {
+    #cards-wrapper {
+      transform: translate(-50%, -50%) scale(0.5);
+    }
+  }
+}
