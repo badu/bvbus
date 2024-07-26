@@ -12,7 +12,6 @@ const toast = inject('toast')
 const emit = defineEmits(['selectTime'])
 
 const displayedTab = ref("current")
-const yellow = "#1E232B"
 let busTable = ref(null)
 
 const scrollToFirstValid = (currentTab, table) => {
@@ -117,7 +116,7 @@ const responsiveOptions = ref([
           <Tag
               :rounded="true"
               :value="slotProps.data.busNo"
-              :style="'font-family:TheLedDisplaySt;min-width:40px;user-select:none;background-color:'+ slotProps.data.color+';color:'+yellow"/>
+              :style="'font-family:TheLedDisplaySt;min-width:40px;user-select:none;color:\'#1E232B\';background-color:'+ slotProps.data.color"/>
         </template>
       </Carousel>
 

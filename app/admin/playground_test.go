@@ -4,16 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/golang/geo/s2"
 	"github.com/mattn/go-sqlite3"
 	"github.com/qedus/osmpbf"
 )
@@ -974,42 +978,109 @@ func TestGenerateBussesJS(t *testing.T) {
 }
 
 func TestGenerateTiles(t *testing.T) {
-	wd, _ := os.Getwd()
-	t.Logf("working dir %s", wd)
-	client := http.Client{}
-	for _, zoom := range []int{13, 14, 15} {
-		xyzts := GetTilesInBBoxForZoom(45.52711580, 25.50356420, 45.75232800, 25.68892360, zoom)
-		for _, xyz := range xyzts {
-			dirPath := fmt.Sprintf("./../../frontend/web/public/%d/%d", zoom, xyz.X)
-			filePath := fmt.Sprintf("%d/%d/%d.png", zoom, xyz.X, xyz.Y)
-			resp, err := client.Get("http://localhost:8080/tiles/" + filePath)
-			if err != nil {
-				t.Fatalf("error getting tile: %#v", err)
-			}
-			defer resp.Body.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("error : expecting status code 'OK', got %d", resp.StatusCode)
-			}
-
-			if err := os.MkdirAll(dirPath, 0755); err != nil {
-				t.Fatalf("error making folders: %#v", err)
-			}
-
-			out, err := os.Create("./../../frontend/web/public/" + filePath)
-			if err != nil {
-				t.Fatalf("error creating png file: %#v", err)
-			}
-
-			// Write the body to the file
-			_, err = io.Copy(out, resp.Body)
-			err = out.Close()
-			if err != nil {
-				t.Fatalf("error closing file:%#v", err)
-			}
-
-		}
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	if err != nil {
+		t.Fatalf("error creating repository:%#v", err)
 	}
+
+	data, err := ReadPBFData(logger, "./../../data/brasov.osm.pbf", repo)
+	if err != nil {
+		logger.Error("error reading PBF data", "err", err)
+		os.Exit(1)
+	}
+
+	defaultColor, _ := parseHexColor(LightGrey, 1)
+	styles := make(map[string]map[string]Style)
+	styles[DefaultTag] = make(map[string]Style)
+	styles[DefaultTag][DefaultTag] = Style{Color: defaultColor, Width: 2}
+
+	specialColor, _ := parseHexColor(DarkYellow, 1)
+	styles[SpecialTag] = make(map[string]Style)
+	styles[SpecialTag][SpecialTag] = Style{Color: specialColor, Width: 5}
+
+	boundaryColor, _ := parseHexColor(LightYellow, 1)
+	styles["boundary"] = make(map[string]Style)
+	styles["boundary"]["administrative"] = Style{Color: boundaryColor, Width: 3}
+
+	var wg sync.WaitGroup
+	tasks := make(chan [2]interface{}, 8)
+
+	t.Logf("start %d workers", runtime.NumCPU())
+	for i := 0; i < runtime.NumCPU(); i++ {
+		go func(num int) {
+			count := 0
+			for task := range tasks {
+				zoom := task[0].(int)
+				xyz := task[1].(XYZ)
+
+				dirPath := fmt.Sprintf("./../../frontend/web/public/%d/%d", zoom, xyz.X)
+				if err := os.MkdirAll(dirPath, 0755); err != nil {
+					t.Fatalf("error making folders: %#v", err)
+				}
+
+				northWestPoint := GetPointByCoords(xyz.X, xyz.Y, zoom)
+				southEastPoint := GetPointByCoords(xyz.X+1, xyz.Y+1, zoom)
+
+				img := image.NewRGBA(image.Rect(0, 0, tileSize, tileSize))
+				draw.Draw(img, img.Bounds(), image.Transparent, image.ZP, draw.Src)
+
+				result := &Tile{
+					image:     img,
+					zoom:      zoom,
+					tileSize:  tileSize,
+					northWest: northWestPoint,
+					southEast: southEastPoint,
+					p1:        s2.PointFromLatLng(s2.LatLngFromDegrees(northWestPoint.Lat, northWestPoint.Lon)),
+					p2:        s2.PointFromLatLng(s2.LatLngFromDegrees(southEastPoint.Lat, northWestPoint.Lon)),
+					p3:        s2.PointFromLatLng(s2.LatLngFromDegrees(northWestPoint.Lat, southEastPoint.Lon)),
+					p4:        s2.PointFromLatLng(s2.LatLngFromDegrees(southEastPoint.Lat, southEastPoint.Lon)),
+					styles:    styles,
+				}
+
+				result.Draw(data)
+
+				filePath := fmt.Sprintf("%d/%d/%d.png", zoom, xyz.X, xyz.Y)
+				out, err := os.Create("./../../frontend/web/public/" + filePath)
+				if err != nil {
+					t.Fatalf("error creating png file: %#v", err)
+				}
+
+				err = png.Encode(out, result.image)
+				if err != nil {
+					logger.Error("error encoding PNG tile", "err", err)
+					return
+				}
+
+				err = out.Close()
+				if err != nil {
+					t.Fatalf("error closing file:%#v", err)
+				}
+
+				wg.Done()
+				count++
+				if count%1000 == 0 {
+					t.Logf("1000 saved.")
+				}
+			}
+
+			t.Logf("goroutine %d done", num)
+		}(i)
+	}
+
+	for _, zoom := range []int{13, 14, 15, 16, 17} {
+		xyzts, bounds := GetTilesInBBoxForZoom(45.00, 25.00, 46.00, 26.00, zoom)
+		t.Logf("saving %d tiles", len(xyzts))
+		for _, xyz := range xyzts {
+			wg.Add(1)
+			tasks <- [2]interface{}{zoom, xyz}
+		}
+		t.Logf("%d tiles saved for zoom %d X from %d to %d Y from %d to %d", len(xyzts), zoom, bounds.XFrom, bounds.XTo, bounds.YFrom, bounds.YTo)
+	}
+
+	wg.Wait()
+	close(tasks)
 }
 
 func TestGenerateTimeTables(t *testing.T) {
@@ -1048,4 +1119,171 @@ func TestGenerateTimeTables(t *testing.T) {
 		}
 	}
 	t.Logf("%d jsons written", len(data))
+}
+
+func TestGenerateTerminalsJSON(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	if err != nil {
+		t.Fatalf("error creating repository:%#v", err)
+	}
+
+	busses, err := repo.GetAllFullBusses()
+	if err != nil {
+		t.Fatalf("error reading busses : %#v", err)
+	}
+
+	sort.Slice(busses, func(i, j int) bool {
+		return Compare(busses[i].Line, busses[j].Line) < 0
+	})
+
+	type Terminal struct {
+		ID       int64
+		Name     string
+		Stations map[int64]Station
+	}
+
+	stationNamesMap := make(map[string]map[int64]struct{})
+	terminalsMap := make(map[string]*Terminal)
+	for _, bus := range busses {
+		firstTerminalName := bus.Stations[0].Name
+		if _, has := terminalsMap[firstTerminalName]; !has {
+			terminalsMap[firstTerminalName] = &Terminal{ID: bus.Stations[0].OSMID, Name: firstTerminalName, Stations: make(map[int64]Station)}
+		}
+		terminalsMap[firstTerminalName].Stations[bus.Stations[0].OSMID] = bus.Stations[0]
+
+		secondTerminalName := bus.Stations[len(bus.Stations)-1].Name
+		if _, has := terminalsMap[secondTerminalName]; !has {
+			terminalsMap[secondTerminalName] = &Terminal{ID: bus.Stations[len(bus.Stations)-1].OSMID, Name: secondTerminalName, Stations: make(map[int64]Station)}
+		}
+		terminalsMap[secondTerminalName].Stations[bus.Stations[len(bus.Stations)-1].OSMID] = bus.Stations[len(bus.Stations)-1]
+
+		if _, has := stationNamesMap[firstTerminalName]; !has {
+			stationNamesMap[firstTerminalName] = make(map[int64]struct{})
+		}
+
+		if _, has := stationNamesMap[secondTerminalName]; !has {
+			stationNamesMap[secondTerminalName] = make(map[int64]struct{})
+		}
+	}
+
+	terminals := make([]*Terminal, 0)
+	for _, terminal := range terminalsMap {
+		terminals = append(terminals, terminal)
+	}
+
+	sort.Slice(terminals, func(i, j int) bool {
+		return Compare(terminals[i].Name, terminals[j].Name) < 0
+	})
+
+	knownTerminals := make(map[string]struct{})
+	for _, terminal := range terminals {
+		if len(terminal.Stations) <= 2 {
+			// t.Logf("skipping %q since it have %d stations", terminal.Name, len(terminal.Stations))
+			continue
+		}
+
+		knownTerminals[terminal.Name] = struct{}{}
+	}
+
+	for _, bus := range busses {
+		for i, station := range bus.Stations {
+			if i == 0 {
+				continue
+			}
+
+			if i == len(bus.Stations)-1 {
+				continue
+			}
+
+			if _, has := knownTerminals[station.Name]; has {
+				terminal, hasTerminal := terminalsMap[station.Name]
+				if hasTerminal {
+					found := false
+					for _, terminalStation := range terminal.Stations {
+						if terminalStation.OSMID == station.OSMID {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Logf("adding %q [%d] %q to extra terminals (it's a bus stop in a terminal)", station.Name, station.OSMID, station.StreetName)
+						stationNamesMap[station.Name][station.OSMID] = struct{}{}
+					}
+				} else {
+					t.Fatalf("error finding terminal %q in terminals map", station.Name)
+				}
+
+			}
+		}
+	}
+
+	var terminalsJson strings.Builder
+	terminalsJson.WriteString("const terminals = [")
+	firstAdded := false
+	for _, terminal := range terminals {
+		if len(terminal.Stations) <= 2 {
+			// t.Logf("skipping %q since it have %d stations", terminal.Name, len(terminal.Stations))
+			continue
+		}
+
+		if firstAdded {
+			terminalsJson.WriteRune(',')
+		} else {
+			firstAdded = true
+		}
+		stationIDs := ""
+		j := 0
+		for _, station := range terminal.Stations {
+			if j > 0 {
+				stationIDs += ","
+			}
+			stationIDs += strconv.Itoa(int(station.OSMID))
+			j++
+		}
+
+		extra, has := stationNamesMap[terminal.Name]
+		if has {
+			stationIDs += ","
+			j := 0
+			for extraID := range extra {
+				if j > 0 {
+					stationIDs += ","
+				}
+				stationIDs += strconv.Itoa(int(extraID))
+				j++
+			}
+		}
+		lat := 0.0
+		lon := 0.0
+		switch terminal.Name {
+		case "Livada Postei":
+			lat, lon = 45.6456508, 25.5889315
+		case "Roman":
+			lat, lon = 45.6327617, 25.6322576
+		case "Rulmentul":
+			lat, lon = 45.6822398, 25.6150512
+		case "Saturn":
+			lat, lon = 45.6350388, 25.6352924
+		case "Stadionul Municipal":
+			lat, lon = 45.6606749, 25.6122751
+		case "Terminal Gara":
+			lat, lon = 45.6606749, 25.6122751
+		case "Triaj":
+			lat, lon = 45.6755206, 25.6474401
+		}
+
+		t.Logf("terminal %q = stations ids = %s", terminal.Name, stationIDs)
+		terminalsJson.WriteString(fmt.Sprintf("{%q:%d,%q:[%s],%q:{%q:%.08f,%q:%.08f}}", "i", terminal.ID, "s", stationIDs, "r", "lt", lat, "ln", lon))
+	}
+
+	terminalsJson.WriteString("];\nexport default terminals;\n")
+
+	t.Logf("result:\n%s", terminalsJson.String())
+
+	err = os.WriteFile("./../../frontend/web/src/terminals.js", []byte(terminalsJson.String()), 0644)
+	if err != nil {
+		t.Fatalf("error writing urban_busses.js : %#v", err)
+	}
 }

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -341,7 +342,8 @@ func ServeTiles(logger *slog.Logger, pbfFilePath string, repo *Repository) func(
 	boundaryColor, _ := parseHexColor(LightYellow, 1)
 	styles["boundary"] = make(map[string]Style)
 	styles["boundary"]["administrative"] = Style{Color: boundaryColor, Width: 3}
-
+	wd, _ := os.Getwd()
+	logger.Info("working folder", "wd", wd)
 	return func(w http.ResponseWriter, r *http.Request) {
 		x, err := strconv.Atoi(r.PathValue("x"))
 		if err != nil {
@@ -362,6 +364,17 @@ func ServeTiles(logger *slog.Logger, pbfFilePath string, repo *Repository) func(
 			logger.Error("bad request (zoom)", "err", err)
 			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusBadRequest)
 			return
+		}
+
+		dirPath := fmt.Sprintf(wd+"/frontend/web/public/%d/%d", zoom, x)
+		if err := os.MkdirAll(dirPath, 0755); err != nil {
+			logger.Error("error creating folder", "folder", dirPath, "err", err)
+		}
+		filePath := fmt.Sprintf(wd+"/frontend/web/public/%d/%d/%d.png", zoom, x, y)
+		if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
+			// logger.Warn("requested file doesn't exist", "file", filePath)
+		} else {
+			// logger.Info("file exists", "file", filePath)
 		}
 
 		northWestPoint := GetPointByCoords(x, y, zoom)

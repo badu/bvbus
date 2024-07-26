@@ -10,12 +10,12 @@ import {Fill, Icon, RegularShape, Stroke, Style, Text} from "ol/style.js"
 import CircleStyle from "ol/style/Circle.js"
 import OLMap from 'ol/Map.js'
 import {unByKey} from 'ol/Observable'
-import {inject, onMounted} from "vue"
+import {inject, onMounted, ref} from "vue"
 import {easeOut} from 'ol/easing'
 import {getVectorContext} from "ol/render"
-import {boundingExtent} from "ol/extent.js";
+import {boundingExtent} from "ol/extent.js"
 
-const emit = defineEmits(['selectStation', 'deselectStation'])
+const emit = defineEmits(['selectStation', 'deselectStation','terminalChooser'])
 
 const mapCenter = inject('mapCenter')
 const mapZoom = inject('mapZoom')
@@ -23,6 +23,9 @@ const maxZoom = inject('maxZoom')
 const selectedStations = inject('selectedStations')
 const busStations = inject('busStations')
 const loadingInProgress = inject('loadingInProgress')
+const terminalsMap = inject('terminalsMap')
+const terminals = inject('terminalsData')
+const toast = inject('toast')
 
 const view = new View({
   center: mapCenter.value,
@@ -31,89 +34,88 @@ const view = new View({
   maxZoom: maxZoom.value,
 })
 
-const iconStyle = new Style({
-  image: new Icon({
-    anchorXUnits: 'fraction',
-    anchorYUnits: 'pixels',
-    src: 'svgs/bus.svg',
-    scale: 2,
-  })
+const imageIcon = new Icon({
+  anchorXUnits: 'fraction',
+  anchorYUnits: 'pixels',
+  src: 'svgs/bus.svg',
+  scale: 2,
 })
 
-const stationStyle = (feature, resolution) => {
-  if (resolution > 4) {
-    return iconStyle
+const stationShape = new RegularShape({
+  radius: 8,
+  points: 3,
+  angle: Math.PI,
+  displacement: [0, 10],
+  fill: new Fill({
+    color: '#F5B301',
+  }),
+})
+
+
+const clusterStyle = (feature, resolution) => {
+  if (feature.get('features').length === 1) {
+    const oneFeature = feature.get('features')[0]
+    const fontSize = resolution < 4 ? '25px Roboto,sans-serif' : '15px Roboto,sans-serif'
+    const stationTextStyle = new Text({
+      font: fontSize,
+      text: oneFeature.get('stationName'),
+      fill: new Fill({color: '#FED053'}),
+      backgroundFill: new Fill({color: '#2A2E34'}),
+      padding: [0, 0, 0, 0],
+      textBaseline: 'bottom',
+      offsetY: -15,
+      stroke: new Stroke({color: '#3B3F46', width: 3}),
+    })
+
+    if (resolution < 4 && !oneFeature.get('isTerminal')) {
+      const streetTextStyle = new Text({
+        font: `15px Roboto,sans-serif`,
+        text: oneFeature.get('stationStreet'),
+        fill: new Fill({color: '#F5B301'}),
+        padding: [0, 0, 0, 0],
+        textBaseline: 'bottom',
+        offsetY: 50,
+      })
+      return [
+        new Style({image: stationShape, text: stationTextStyle}),
+        new Style({image: imageIcon, text: streetTextStyle}),
+      ]
+    } else {
+      return [
+        new Style({image: stationShape, text: stationTextStyle}),
+        new Style({image: imageIcon}),
+      ]
+    }
   }
 
-  const textStyle = new Text({
-    font: `${25 - resolution}px sans-serif`,
-    text: feature.get('stationName'),
+  const clusterText = new Text({
+    font: `15px sans-serif`,
+    text: `${feature.get('features').length}`,
     fill: new Fill({color: '#FED053'}),
-    backgroundFill: new Fill({color: '#2A2E34'}),
-    padding: [2, 2, 2, 2],
     textBaseline: 'bottom',
-    offsetY: -15,
     stroke: new Stroke({color: '#3B3F46', width: 3}),
+    offsetX: 0,
+    offsetY: 25,
   })
 
-  const streetTextStyle = new Text({
-    font: `${15 - resolution}px Roboto,sans-serif`,
-    text: feature.get('stationStreet'),
-    fill: new Fill({color: '#F5B301'}),
-    padding: [2, 2, 2, 2],
-    textBaseline: 'bottom',
-    offsetY: 50,
-  })
-
-  return [
-
-    new Style({
-      image: new RegularShape({
-        radius: 8,
-        points: 3,
-        angle: Math.PI,
-        displacement: [0, 10],
-        fill: new Fill({
-          color: '#F5B301',
-        }),
-      }),
-      text: textStyle
-    }),
-
-    new Style({
-      image: new Icon({
-        anchorXUnits: 'fraction',
-        anchorYUnits: 'pixels',
-        src: 'svgs/bus.svg',
-        scale: 2,
-      }),
-      text: streetTextStyle,
-    }),
-
-  ]
+  return new Style({image: imageIcon, text: clusterText})
 }
 
-const stationsSource = new VectorSource()
-const stationsLayer = new VectorLayer({source: stationsSource, style: stationStyle})
-
 const clusterSource = new VectorSource()
-const cluster = new Cluster({source: clusterSource, distance: 40})
-const clusterLayer = new VectorLayer({source: cluster, style: iconStyle})
-
-const stationMarkers = []
+const cluster = new Cluster({source: clusterSource, distance: 60})
+const clusterLayer = new VectorLayer({source: cluster, style: clusterStyle})
 
 const customTileLayer = new TileLayer({
   source: new XYZ({
     url: './{z}/{x}/{y}.png',
     minZoom: mapZoom.value,
     maxZoom: maxZoom.value,
-    tileSize: [2048, 2048],
   })
 })
 
 const flashMarker = (map, marker) => {
-  const duration = 1000;
-  const start = Date.now();
+  const duration = 1000
+  const start = Date.now()
   const flashGeom = marker.getGeometry().clone();
   let animate
   let listenerKey
@@ -122,7 +124,7 @@ const flashMarker = (map, marker) => {
     const elapsed = frameState.time - start
     if (elapsed >= duration) {
       unByKey(listenerKey)
-      stationsLayer.un('postrender', animate)
+      clusterLayer.un('postrender', animate)
       return
     }
     const vectorContext = getVectorContext(event)
@@ -138,89 +140,131 @@ const flashMarker = (map, marker) => {
     vectorContext.drawGeometry(flashGeom)
     map.render()
   }
-  listenerKey = stationsLayer.on('postrender', animate)
+  listenerKey = clusterLayer.on('postrender', animate)
 }
 
-busStations.value.forEach((station) => {
-  const marker = new Feature({geometry: station.point})
-  marker.setId(station.i)
-  marker.set('stationName', station.n)
-  marker.set('stationStreet', station.s)
-  stationMarkers.push(marker)
-})
-let initDone = false
 onMounted(async () => {
+  let initDone = false
+
+  const stationMarkers = []
+  busStations.value.forEach((station) => {
+    if (!terminalsMap.has(station.i)) {
+      const marker = new Feature({geometry: station.point})
+      marker.setId(station.i)
+      marker.set('stationName', station.n)
+      marker.set('stationStreet', station.s)
+      stationMarkers.push(marker)
+    }
+  })
+
+  for (let i = 0; i < terminals.length; i++) {
+    const marker = new Feature({geometry: terminals[i].point})
+    marker.set('stationName', terminals[i].n)
+    marker.set('stationStreet', terminals[i].s)
+    marker.set('isTerminal', true)
+    marker.setId(terminals[i].i)
+    stationMarkers.push(marker)
+  }
+
   const map = new OLMap({
     target: 'map',
-    layers: [customTileLayer, clusterLayer, stationsLayer],
+    layers: [customTileLayer, clusterLayer],
     view: view,
   })
-  map.getControls().clear()
 
   map.on('loadstart', function () {
+    if (!initDone) {
+      map.getControls().clear()
+    }
     loadingInProgress.value = true
   })
 
   map.on('loadend', function () {
     if (!initDone) {
-      stationsSource.clear()
-
-      clusterLayer.setVisible(true)
-      stationsLayer.setVisible(false)
-
+      clusterSource.clear()
       clusterSource.addFeatures(stationMarkers)
-      stationsSource.addFeatures(stationMarkers)
       initDone = true
     }
-
     loadingInProgress.value = false
   })
 
   view.on('change:resolution', () => {
-    if (view.getZoom() > 16) {
-      clusterLayer.setVisible(false)
-      stationsLayer.setVisible(true)
-    } else {
-      clusterLayer.setVisible(true)
-      stationsLayer.setVisible(false)
-    }
+    //console.log('zoom and resolution', view.getZoom(), view.getResolution())
   })
 
   map.on('click', (e) => {
-    if (view.getZoom() > 16) {
-      map.forEachFeatureAtPixel(e.pixel, function (feature) {
-        const markerIndex = stationMarkers.indexOf(feature)
-        if (markerIndex < 0) {
-          return
-        }
-
-        const selIndex = selectedStations.value.indexOf(feature.getId())
-        if (selIndex < 0) {
-          view.animate({
-            center: stationMarkers[markerIndex].getGeometry().getCoordinates(),
-            duration: 1000,
-            zoom: maxZoom.value
-          })
-          emit('selectStation', {featureId: feature.getId()})
-
-          flashMarker(map, feature)
-        } else {
-          emit('deselectStation', {featureId: feature.getId()})
-        }
-      })
-    } else {
-      clusterLayer.getFeatures(e.pixel).then((clickedFeatures) => {
-        if (clickedFeatures.length) {
-          const features = clickedFeatures[0].get('features');
-          if (features.length > 1) {
-            const extent = boundingExtent(
-                features.map((r) => r.getGeometry().getCoordinates()),
-            );
+    clusterLayer.getFeatures(e.pixel).then((clickedFeatures) => {
+      if (clickedFeatures.length) {
+        const features = clickedFeatures[0].get('features')
+        switch (features.length) {
+          case 1:
+            const feature = features[0]
+            const markerIndex = stationMarkers.indexOf(feature)
+            if (markerIndex < 0) {
+              return
+            }
+            if (feature.get('isTerminal')) {
+              for (let i = 0; i < terminals.length; i++) {
+                if (terminals[i].i === feature.getId()) {
+                  emit('terminalChooser',{terminal:terminals[i]})
+                  break
+                }
+              }
+              return
+            }
+            const featureId = feature.getId()
+            const selIndex = selectedStations.value.indexOf(featureId)
+            if (selIndex < 0) {
+              view.animate({
+                center: stationMarkers[markerIndex].getGeometry().getCoordinates(),
+                duration: 1000,
+                zoom: maxZoom.value
+              })
+              emit('selectStation', {featureId: featureId})
+              flashMarker(map, feature)
+            } else {
+              emit('deselectStation', {featureId: featureId})
+            }
+            break
+          case 0:
+            console.error("error : no feature???")
+            break
+          default:
+            const extent = boundingExtent(features.map((r) => r.getGeometry().getCoordinates()))
             map.getView().fit(extent, {duration: 1000, padding: [50, 50, 50, 50]})
-          }
+            break
         }
-      })
-    }
+      } else {
+        map.forEachFeatureAtPixel(e.pixel, function (feature) {
+          const markerIndex = stationMarkers.indexOf(feature)
+          if (markerIndex < 0) {
+            return
+          }
+          if (feature.get('isTerminal')) {
+            console.error('feature is terminal, but should be detected as cluster feature')
+            toast.add({
+              severity: 'error',
+              summary: 'Terminal feature detected, but should be cluster feature',
+              life: 3000
+            })
+            return
+          }
+          const selIndex = selectedStations.value.indexOf(feature.getId())
+          if (selIndex < 0) {
+            view.animate({
+              center: stationMarkers[markerIndex].getGeometry().getCoordinates(),
+              duration: 1000,
+              zoom: maxZoom.value
+            })
+            emit('selectStation', {featureId: feature.getId()})
+
+            flashMarker(map, feature)
+          } else {
+            emit('deselectStation', {featureId: feature.getId()})
+          }
+        })
+      }
+    })
   })
 
 })

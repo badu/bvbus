@@ -2,7 +2,6 @@ package admin
 
 import (
 	"cmp"
-	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -189,8 +188,11 @@ func widthOfString(font *truetype.Font, size float64, s string) float64 {
 type XYZ struct {
 	X, Y, Z int
 }
+type Bounds struct {
+	XFrom, XTo, YFrom, YTo int
+}
 
-func GetTilesInBBoxForZoom(northWestLat, northWestLong, southEastLat, southEastLong float64, zoom int) []XYZ {
+func GetTilesInBBoxForZoom(northWestLat, northWestLong, southEastLat, southEastLong float64, zoom int) ([]XYZ, Bounds) {
 	n := math.Exp2(float64(zoom))
 	northWestX := int(math.Floor((northWestLong + 180.0) / 360.0 * n))
 	if float64(northWestX) >= n {
@@ -204,9 +206,6 @@ func GetTilesInBBoxForZoom(northWestLat, northWestLong, southEastLat, southEastL
 	}
 	southEastY := int(math.Floor((1.0 - math.Log(math.Tan(southEastLat*math.Pi/180.0)+1.0/math.Cos(southEastLat*math.Pi/180.0))/math.Pi) / 2.0 * n))
 
-	fmt.Printf("%d X from %d to %d ", zoom, northWestX, southEastX)
-	fmt.Printf("Y from %d to %d\n", northWestY, southEastY)
-
 	var result []XYZ
 	for x := northWestX; x <= southEastX; x++ {
 		for y := southEastY; y <= northWestY; y++ {
@@ -218,5 +217,5 @@ func GetTilesInBBoxForZoom(northWestLat, northWestLong, southEastLat, southEastL
 		}
 	}
 
-	return result
+	return result, Bounds{XFrom: northWestX, XTo: southEastX, YFrom: northWestY, YTo: southEastY}
 }

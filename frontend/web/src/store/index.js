@@ -1,5 +1,6 @@
 import urban_stations from "@/urban_stations.js"
 import urban_busses from "@/urban_busses.js"
+import terminals from "@/terminals.js"
 import {ref, watch} from "vue";
 import {fromLonLat} from "ol/proj.js";
 import {Point} from "ol/geom.js";
@@ -32,7 +33,6 @@ export const store = () => {
     const stationsLinesMap = new Map()
     const busLinesMap = new Map()
     for (let i = 0; i < urban_busses.length; i++) {
-        busLinesMap.set(urban_busses[i].i, urban_busses[i])
         for (let j = 0; j < urban_busses[i].s.length; j++) {
             if (!stationsLinesMap.has(urban_busses[i].s[j])) {
                 stationsLinesMap.set(urban_busses[i].s[j], new Map().set(urban_busses[i].i, true))
@@ -40,12 +40,29 @@ export const store = () => {
                 stationsLinesMap.get(urban_busses[i].s[j]).set(urban_busses[i].i, true)
             }
         }
+        busLinesMap.set(urban_busses[i].i, urban_busses[i])
     }
 
     const busStationsMap = new Map()
     for (let i = 0; i < urban_stations.length; i++) {
-        busStationsMap.set(urban_stations[i].i, urban_stations[i])
         urban_stations[i].point = new Point(fromLonLat([urban_stations[i].ln, urban_stations[i].lt]))
+        urban_stations[i].busses = []
+        const stationId = urban_stations[i].i
+        if (stationsLinesMap.has(stationId)) {
+            const busses = stationsLinesMap.get(stationId)
+            for (let [busId, has] of busses) {
+                if (busLinesMap.has(busId)) {
+                    const bus = busLinesMap.get(busId)
+                    const index = urban_stations[i].busses.indexOf({i: bus.i, n: bus.n, c: bus.c})
+                    if (index < 0) {
+                        urban_stations[i].busses.push({i: bus.i, n: bus.n, c: bus.c})
+                    }
+                } else {
+                    console.error('busLinesMap is missing', busId)
+                }
+            }
+        }
+        busStationsMap.set(urban_stations[i].i, urban_stations[i])
     }
 
     const selectedBusLine = ref(null)
@@ -79,6 +96,35 @@ export const store = () => {
     const pathfinderMode = ref(false)
     const loadingInProgress = ref(false)
     const userLocation = ref(null)
+
+    const terminalsMap = new Map()
+    const terminalsData = []
+    for (let i = 0; i < terminals.length; i++) {
+        if (busStationsMap.has(terminals[i].i)) {
+            const station = busStationsMap.get(terminals[i].i)
+            const terminal = {i: terminals[i].i}
+            terminal.point = new Point(fromLonLat([station.ln, station.lt]))
+            terminal.n = station.n
+            terminal.s = station.s
+            terminal.c = []
+            for (let j = 0; j < terminals[i].s.length; j++) {
+                if (busStationsMap.has(terminals[i].s[j])) {
+                    terminal.c.push(busStationsMap.get(terminals[i].s[j]))
+                } else {
+                    console.error("error finding sub-station for terminal", terminals[i].i)
+                }
+            }
+            terminalsData.push(terminal)
+        } else {
+            console.error("error finding station for terminal", terminals[i].i)
+        }
+        for (let j = 0; j < terminals[i].s.length; j++) {
+            terminalsMap.set(terminals[i].s[j], true)
+        }
+    }
+
+    const terminalChooserVisible = ref(false)
+    const terminalsList = ref([])
     return {
         busStations,
         busLines,
@@ -104,6 +150,10 @@ export const store = () => {
         loadingInProgress,
         userLocation,
         pathfinderMode,
-        stationsLinesMap
+        stationsLinesMap,
+        terminalsMap,
+        terminalsData,
+        terminalChooserVisible,
+        terminalsList
     }
 }

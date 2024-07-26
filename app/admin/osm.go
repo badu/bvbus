@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	tileSize = 2048
+	tileSize = 256
 
 	DarkGrey     = "#1E232B"
 	MediumGrey   = "#2A2E34"

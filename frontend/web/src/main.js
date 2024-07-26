@@ -31,6 +31,7 @@ import Map from "@/components/Map.vue"
 import BusLine from "@/components/BusLine.vue"
 import Busses from "@/components/Busses.vue";
 import TimeTable from "@/components/TimeTable.vue"
+import TerminalChooser from "@/components/TerminalChooser.vue";
 
 const app = createApp(App)
 app.use(router)
@@ -73,5 +74,6 @@ app.component('Map', Map)
 app.component('TimeTable', TimeTable)
 app.component('Busses', Busses)
 app.component('BusLine', BusLine)
+app.component('TerminalChooser', TerminalChooser)
 
 app.mount('#app')

@@ -2,6 +2,7 @@
 import {inject, onMounted, ref, watch} from "vue";
 import TimeTable from "@/components/TimeTable.vue";
 import Busses from "@/components/Busses.vue";
+import TerminalChooser from "@/components/TerminalChooser.vue";
 
 const toast = inject('toast')
 const busStationsMap = inject('busStationsMap')
@@ -23,6 +24,8 @@ const selectedBusLine = inject('selectedBusLine')
 const loadingInProgress = inject('loadingInProgress')
 const userLocation = inject('userLocation')
 const pathfinderMode = inject('pathfinderMode')
+const terminalChooserVisible = inject('terminalChooserVisible')
+const terminalsList = inject('terminalsList')
 
 watch(selectedBusLine, (newSelectedBusLine) => {
   bussesListVisible.value = false
@@ -186,6 +189,16 @@ const onDeselectStation = (event) => {
   }
 }
 
+const onTerminalChooser = (event) => {
+  const newTerminalsList = []
+  event.terminal.c.forEach((choice) => {
+    newTerminalsList.push({i: choice.i, s: choice.s, busses: choice.busses})
+  })
+  terminalsList.value = newTerminalsList
+  terminalChooserVisible.value = true
+}
+
+
 onMounted(() => {
   //onSelectStation({featureId: 3713443720})
   //selectedBusLine.value = busLinesMap.get(5417775)
@@ -196,7 +209,8 @@ onMounted(() => {
 <template>
   <div class="parent items-center">
     <div class="parent">
-      <Map class="child" @selectStation="onSelectStation" @deselectStation="onDeselectStation"/>
+      <Map class="child" @selectStation="onSelectStation" @deselectStation="onDeselectStation"
+           @terminalChooser="onTerminalChooser"/>
       <div style="position: relative; bottom: 10%; right:10%">
         <SpeedDial :model="items"
                    :radius="180"
@@ -211,6 +225,7 @@ onMounted(() => {
     <TimeTable/>
     <BusLine/>
     <Busses/>
+    <TerminalChooser/>
   </div>
 
   <Dialog :visible="loadingInProgress" modal :draggable="false" :closable="false"
@@ -228,7 +243,6 @@ onMounted(() => {
   justify-content: end;
   height: 100vh;
   width: 100vw;
-  border: 7px solid #3B3F46;
   background-color: #1E232B;
 }
 
