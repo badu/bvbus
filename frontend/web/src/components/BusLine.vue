@@ -14,7 +14,7 @@ watch(selectedBusLine, (newSelectedBusLine) => {
   newSelectedBusLine.s.forEach((stationId) => {
     if (busStationsMap.has(stationId)) {
       const station = {...busStationsMap.get(stationId)}
-      station.busses = []
+      station.otherBusses = []
       const otherLines = stationsLinesMap.get(stationId)
       for (let lineId of otherLines.keys()) {
         if (lineId === newSelectedBusLine.i) {
@@ -24,7 +24,7 @@ watch(selectedBusLine, (newSelectedBusLine) => {
         if (!busLinesMap.has(lineId)) {
           console.error('line with id not found', lineId)
         } else {
-          station.busses.push(busLinesMap.get(lineId))
+          station.otherBusses.push(busLinesMap.get(lineId))
         }
       }
 
@@ -47,8 +47,6 @@ const onStationClicked = (event, data) => {
     console.log('error finding station', data.i)
   }
 }
-
-const yellow = "#1E232B"
 
 const responsiveOptions = ref([
   {
@@ -97,7 +95,7 @@ const responsiveOptions = ref([
 
       <template #opposite="slotProps">
         <div style="display: flex;flex-direction: row;align-items: center;align-content:end">
-          <Carousel :value="slotProps.item.busses"
+          <Carousel :value="slotProps.item.otherBusses"
                     :responsiveOptions="responsiveOptions"
                     :numVisible="3"
                     :numScroll="1"
@@ -111,7 +109,7 @@ const responsiveOptions = ref([
                   @click="onBusNumberClicked($event,slotProps.data)"
                   :rounded="true"
                   :value="slotProps.data.n"
-                  :style="'font-family:TheLedDisplaySt;min-width:40px;user-select:none;background-color:'+ slotProps.data.c+';color:'+yellow"/>
+                  :style="'font-family:TheLedDisplaySt;min-width:40px;user-select:none;color:\'#1E232B\'background-color:'+ slotProps.data.c"/>
             </template>
           </Carousel>
         </div>

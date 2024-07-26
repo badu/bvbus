@@ -836,3 +836,84 @@ func (r *Repository) GetAllTimetables() ([]Station, error) {
 
 	return result, nil
 }
+
+func (r *Repository) GetAllFullBusses() ([]Busline, error) {
+	const AllBussesSQL = `SELECT id, dir, name, from_station, to_station, no, color, website, urban, metropolitan, crawled FROM busses;`
+
+	rows, err := r.DB.Query(AllBussesSQL)
+	if err != nil {
+		r.Logger.Error("error querying all busses", "err", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	busses := make(map[int64]*Busline)
+	for rows.Next() {
+		var bus Busline
+		err := rows.Scan(
+			&bus.OSMID,
+			&bus.Dir,
+			&bus.Name,
+			&bus.From,
+			&bus.To,
+			&bus.Line,
+			&bus.Color,
+			&bus.Link,
+			&bus.IsUrban,
+			&bus.IsMetropolitan,
+			&bus.WasCrawled,
+		)
+		if err != nil {
+			r.Logger.Error("error scanning bus", "err", err)
+
+			return nil, err
+		}
+		busses[bus.OSMID] = &bus
+	}
+
+	if err := rows.Err(); err != nil {
+		r.Logger.Error("error reading rows", "err", err)
+		return nil, err
+	}
+
+	const AllStopsSQL = `SELECT s.id, s.name, s.lat, s.lng, s.outside, s.board, s.street_name, bs.station_index, bs.bus_id FROM stations s JOIN bus_stops bs ON s.id = bs.station_id ORDER BY bs.station_index;`
+	rows, err = r.DB.Query(AllStopsSQL)
+	if err != nil {
+		r.Logger.Error("error querying all full busses", "err", err)
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var station Station
+		var busID int64
+		err := rows.Scan(
+			&station.OSMID,
+			&station.Name,
+			&station.Lat,
+			&station.Lon,
+			&station.IsOutsideCity,
+			&station.HasBoard,
+			&station.Street,
+			&station.Index,
+			&busID,
+		)
+		if station.Street.Valid {
+			station.StreetName = station.Street.String
+		}
+
+		if err != nil {
+			r.Logger.Error("error scanning bus", "err", err)
+
+			return nil, err
+		}
+
+		busses[busID].Stations = append(busses[busID].Stations, station)
+	}
+
+	var result []Busline
+	for _, bus := range busses {
+		result = append(result, *bus)
+	}
+
+	return result, nil
+}
