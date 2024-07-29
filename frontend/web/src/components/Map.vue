@@ -10,10 +10,12 @@ import {Fill, Icon, RegularShape, Stroke, Style, Text} from "ol/style.js"
 import CircleStyle from "ol/style/Circle.js"
 import OLMap from 'ol/Map.js'
 import {unByKey} from 'ol/Observable'
-import {inject, onMounted, ref} from "vue"
+import {inject, onMounted} from "vue"
 import {easeOut} from 'ol/easing'
 import {getVectorContext} from "ol/render"
 import {boundingExtent} from "ol/extent.js"
+import LongTouch from "ol-ext/interaction/LongTouch.js"
+import {Circle, Point} from "ol/geom.js"
 
 const emit = defineEmits(['selectStation', 'deselectStation', 'terminalChooser'])
 
@@ -109,7 +111,7 @@ const clusterLayer = new VectorLayer({source: cluster, style: clusterStyle})
 
 const customTileLayer = new TileLayer({
   source: new XYZ({
-    url: './{z}/{x}/{y}.png',
+    url: './{z}/{x}/{y}.png',//'http://localhost:8080/tiles/{z}/{x}/{y}.png',
     minZoom: mapZoom.value,
     maxZoom: maxZoom.value,
     tileSize: 2048,
@@ -146,6 +148,20 @@ const flashMarker = (map, marker) => {
   listenerKey = clusterLayer.on('postrender', animate)
 }
 
+const pulseFeature = (coord) => {
+  const f = new Feature(new Point(coord));
+  f.setStyle(new Style({
+    image: new Circle({
+      radius: 30,
+      stroke: new Stroke({color: "red", width: 2})
+    })
+  }))
+  map.animateFeature(f, new Zoom({
+    fade: easeOut,
+    duration: 800,
+  }))
+}
+
 onMounted(async () => {
   let initDone = false
 
@@ -160,6 +176,7 @@ onMounted(async () => {
     }
   })
 
+
   for (let i = 0; i < terminals.length; i++) {
     const marker = new Feature({geometry: terminals[i].point})
     marker.set('stationName', terminals[i].n)
@@ -173,6 +190,33 @@ onMounted(async () => {
     target: 'map',
     layers: [customTileLayer, clusterLayer],
     view: view,
+  })
+
+  const longTouch = new LongTouch({
+    pixelTolerance: 1,
+    handleLongTouchEvent: function (e) {
+      map.forEachFeatureAtPixel(e.pixel, function (feature) {
+        const markerIndex = stationMarkers.indexOf(feature)
+        if (markerIndex < 0) {
+          return
+        }
+
+        console.log('destination', feature.getId())
+      })
+    }
+  })
+
+  map.addInteraction(longTouch)
+  map.on(['longtouch'], function (e) {
+    console.log('very long touch', e)
+    map.forEachFeatureAtPixel(e.pixel, function (feature) {
+      const markerIndex = stationMarkers.indexOf(feature)
+      if (markerIndex < 0) {
+        return
+      }
+
+      console.log('destination', feature.getId())
+    })
   })
 
   map.on('loadstart', function () {

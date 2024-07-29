@@ -5,6 +5,14 @@
     src: local('TheLedDisplaySt'), url('../../TheLedDisplaySt.woff') format('woff');
 }
 
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+
+    src: local('Roboto'), url('../../Roboto-Regular.ttf') format('ttf');
+}
+
+
 :root {
     --vt-c-white: #ffffff;
     --vt-c-white-soft: #f8f8f8;
@@ -70,14 +78,7 @@ body {
     background: #1E232B;
     transition: color 0.5s,
     background-color 0.5s;
-    font-family: Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    sans-serif;
+    font-family: Roboto, sans-serif;
     font-size: 18px;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;

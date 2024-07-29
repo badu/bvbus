@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/png"
 	"log/slog"
@@ -13,8 +14,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fogleman/gg"
+	"github.com/golang/freetype"
 	"github.com/golang/geo/s2"
 )
 
@@ -198,6 +201,10 @@ func (w Way) Draw(onTile *Tile) {
 	}
 }
 
+func (w Way) IsWay() bool {
+	return true
+}
+
 type Tile struct {
 	image                *image.RGBA
 	styles               map[string]map[string]Style
@@ -237,10 +244,12 @@ func (t *Tile) IsCrossing(firstPoint, secondPoint s2.Point) bool {
 		s2.VertexCrossing(t.p2, t.p4, firstPoint, secondPoint)
 }
 
-func (t *Tile) Draw(osmData *PBFData) {
-	for _, feature := range osmData.GetFeatures(t.northWest, t.southEast) {
+func (t *Tile) Draw(osmData *PBFData) []IDraw {
+	features := osmData.GetFeatures(t.northWest, t.southEast)
+	for _, feature := range features {
 		feature.Draw(t)
 	}
+	return features
 }
 
 func (t *Tile) DrawPolyLine(coords [][]float64, tags map[string]string) {
@@ -344,7 +353,23 @@ func ServeTiles(logger *slog.Logger, pbfFilePath string, repo *Repository) func(
 	styles["boundary"]["administrative"] = Style{Color: boundaryColor, Width: 3}
 	wd, _ := os.Getwd()
 	logger.Info("working folder", "wd", wd)
+
+	font_, err := os.ReadFile(wd + "/frontend/web/public/Roboto-Regular.ttf")
+	if err != nil {
+		logger.Warn("error reading font file", "err", err)
+	}
+
+	font, err := freetype.ParseFont(font_)
+	if err != nil {
+		logger.Warn("error parsing font file", "err", err)
+	}
+
+	yellow := color.RGBA{R: 0xFE, G: 0xD0, B: 0x53, A: 0xFF}
+	dimmedYellow := color.RGBA{R: 0xEC, G: 0x9C, B: 0x04, A: 0xFF}
+
 	return func(w http.ResponseWriter, r *http.Request) {
+		now := time.Now()
+
 		x, err := strconv.Atoi(r.PathValue("x"))
 		if err != nil {
 			logger.Error("bad request (x)", "err", err)
@@ -375,6 +400,7 @@ func ServeTiles(logger *slog.Logger, pbfFilePath string, repo *Repository) func(
 		if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
 
 		} else {
+
 			logger.Info("serving existing file", "file", filePath)
 			file, err := os.Open(filePath)
 			if err != nil {
@@ -419,7 +445,41 @@ func ServeTiles(logger *slog.Logger, pbfFilePath string, repo *Repository) func(
 			styles:    styles,
 		}
 
-		result.Draw(data)
+		// text
+
+		// top/left border
+		for i := 0; i < tileSize; i++ {
+			img.Set(0, i, yellow)
+			img.Set(i, 0, yellow)
+		}
+
+		// Tile location
+		err = drawText(img, font, 15, yellow, tileSize/2, 20, fmt.Sprintf("%f, %f - %f, %f", northWestPoint.Lon, northWestPoint.Lat, southEastPoint.Lon, southEastPoint.Lat))
+		if err != nil {
+			// return nil, err
+		}
+
+		// Tile location
+		err = drawText(img, font, 15, yellow, tileSize/2, tileSize-20, time.Since(now).String())
+		if err != nil {
+			// return nil, err
+		}
+
+		features := result.Draw(data)
+		for _, feature := range features {
+			if feature.IsWay() {
+				continue
+			}
+
+			place, ok := feature.(Node)
+			if ok {
+				placeX, placeY := result.GetRelativeXY(place)
+				err = drawText(img, font, 25, dimmedYellow, int(placeX), int(placeY), place.Tags["name"])
+				if err != nil {
+					logger.Warn("error drawing text", "err", err)
+				}
+			}
+		}
 
 		if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
 			out, err := os.Create(filePath)

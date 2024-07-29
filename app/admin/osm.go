@@ -34,6 +34,7 @@ const (
 )
 
 type PBFData struct {
+	Places map[int64]Node
 	Nodes  map[int64]Node
 	Ways   map[int64]Way
 	Findex S2Index
@@ -49,16 +50,27 @@ type S2Index map[s2.CellID][]FeatureRef
 
 type IDraw interface {
 	Draw(t *Tile)
+	IsWay() bool
 }
 
 func (o *PBFData) GetFeatures(northWestPoint, southEastPoint Node) []IDraw {
 	var result []IDraw
 	featureRefs := o.Findex.GetFeatures(northWestPoint, southEastPoint)
 
+	rectangle := s2.RectFromLatLng(s2.LatLngFromDegrees(northWestPoint.Lat, northWestPoint.Lon))
+	rectangle = rectangle.AddPoint(s2.LatLngFromDegrees(southEastPoint.Lat, southEastPoint.Lon))
+
+	for _, place := range o.Places {
+		if rectangle.ContainsLatLng(s2.LatLngFromDegrees(place.Lat, place.Lon)) {
+			result = append(result, place)
+		}
+	}
+
 	// add non-special first
 	for _, featureRef := range featureRefs {
 		switch featureRef.Type {
 		default:
+		case ItemTypeNode:
 		case ItemTypeWay:
 			if _, isSpecial := o.Ways[featureRef.Id].Tags[SpecialTag]; !isSpecial {
 				if _, isBoundary := o.Ways[featureRef.Id].Tags["boundary"]; !isBoundary {
@@ -72,6 +84,7 @@ func (o *PBFData) GetFeatures(northWestPoint, southEastPoint Node) []IDraw {
 	for _, featureRef := range featureRefs {
 		switch featureRef.Type {
 		default:
+		case ItemTypeNode:
 		case ItemTypeWay:
 			if _, isSpecial := o.Ways[featureRef.Id].Tags[SpecialTag]; !isSpecial {
 				if _, isBoundary := o.Ways[featureRef.Id].Tags["boundary"]; isBoundary {
@@ -85,6 +98,7 @@ func (o *PBFData) GetFeatures(northWestPoint, southEastPoint Node) []IDraw {
 	for _, featureRef := range featureRefs {
 		switch featureRef.Type {
 		default:
+		case ItemTypeNode:
 		case ItemTypeWay:
 			if _, isSpecial := o.Ways[featureRef.Id].Tags[SpecialTag]; isSpecial {
 				result = append(result, o.Ways[featureRef.Id])
@@ -226,7 +240,7 @@ func ParsePbf(logger *slog.Logger, path string, repo *Repository, rules map[int]
 		return nil, err
 	}
 
-	data := &PBFData{Nodes: map[int64]Node{}, Ways: map[int64]Way{}, Findex: make(S2Index)}
+	data := &PBFData{Nodes: map[int64]Node{}, Ways: map[int64]Way{}, Findex: make(S2Index), Places: make(map[int64]Node)}
 
 	for {
 		if v, err := decoder.Decode(); err == io.EOF {
@@ -238,6 +252,11 @@ func ParsePbf(logger *slog.Logger, path string, repo *Repository, rules map[int]
 			case *osmpbf.Node:
 				node := NodeFromPbf(v)
 				data.Nodes[node.ID] = node
+
+				if place, isPlace := node.Tags["place"]; isPlace && place == "suburb" {
+					data.Places[node.ID] = node
+				}
+
 			case *osmpbf.Way:
 				way := WayFromPbf(v)
 				zoom, ok := way.MatchAny(rules)

@@ -51,6 +51,14 @@ type Node struct {
 	IsStop  bool              `json:"stop,omitempty"`    //
 }
 
+func (n Node) Draw(onTile *Tile) {
+
+}
+
+func (n Node) IsWay() bool {
+	return false
+}
+
 func (n *Node) CleanupTags() {
 	for k, v := range n.Tags {
 		switch k {

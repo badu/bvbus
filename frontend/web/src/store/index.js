@@ -1,7 +1,9 @@
 import urban_stations from "@/urban_stations.js"
 import urban_busses from "@/urban_busses.js"
+import metro_stations from "@/metro_stations.js"
+import metro_busses from "@/metro_busses.js"
 import terminals from "@/terminals.js"
-import {ref, watch} from "vue";
+import {ref} from "vue";
 import {fromLonLat} from "ol/proj.js";
 import {Point} from "ol/geom.js";
 
@@ -27,9 +29,54 @@ export const store = () => {
         return 0
     }
 
+    const metroStationsLinesMap = new Map()
+    const metroBusLinesMap = new Map()
+    const metroBusLines = ref(metro_busses)
+    for (let i = 0; i < metro_busses.length; i++) {
+        const hex = metro_busses[i].c.replace('#', '')
+
+        const r = parseInt(hex.substring(0, 2), 16)
+        const g = parseInt(hex.substring(2, 4), 16)
+        const b = parseInt(hex.substring(4, 6), 16)
+
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        metro_busses[i].bc = brightness > 155 ? '#1E232B' : '#FED053'
+        metro_busses[i].m = true
+
+        for (let j = 0; j < metro_busses[i].s.length; j++) {
+            if (!metroStationsLinesMap.has(metro_busses[i].s[j])) {
+                metroStationsLinesMap.set(metro_busses[i].s[j], new Map().set(metro_busses[i].i, true))
+            } else {
+                metroStationsLinesMap.get(metro_busses[i].s[j]).set(metro_busses[i].i, true)
+            }
+        }
+        metroBusLinesMap.set(metro_busses[i].i, metro_busses[i])
+    }
+
+    const metroBusStationsMap = new Map()
+    for (let i = 0; i < metro_stations.length; i++) {
+        metro_stations[i].point = new Point(fromLonLat([metro_stations[i].ln, metro_stations[i].lt]))
+        metro_stations[i].busses = []
+        const stationId = metro_stations[i].i
+        if (metroStationsLinesMap.has(stationId)) {
+            const busses = metroStationsLinesMap.get(stationId)
+            for (let [busId, has] of busses) {
+                if (metroBusLinesMap.has(busId)) {
+                    const bus = metroBusLinesMap.get(busId)
+                    const index = metro_stations[i].busses.indexOf({i: bus.i, n: bus.n, c: bus.c})
+                    if (index < 0) {
+                        metro_stations[i].busses.push({i: bus.i, n: bus.n, c: bus.c})
+                    }
+                } else {
+                    console.error('metroBusLinesMap is missing', busId)
+                }
+            }
+        }
+        metroBusStationsMap.set(metro_stations[i].i, metro_stations[i])
+    }
+
     const busStations = ref(urban_stations)
     const busLines = ref(urban_busses)
-
     const stationsLinesMap = new Map()
     const busLinesMap = new Map()
     for (let i = 0; i < urban_busses.length; i++) {
@@ -165,6 +212,10 @@ export const store = () => {
         terminalsData,
         terminalChooserVisible,
         terminalsList,
-        currentTerminal
+        currentTerminal,
+        metroBusLines,
+        metroStationsLinesMap,
+        metroBusLinesMap,
+        metroBusStationsMap,
     }
 }

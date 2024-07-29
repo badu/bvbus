@@ -144,9 +144,7 @@ func replaceDiacritics(input string) string {
 	return sb.String()
 }
 
-func drawText(img *image.RGBA, font *truetype.Font, color color.Color, x, y int, s string) error {
-	var ptSize float64 = 12
-
+func drawText(img *image.RGBA, font *truetype.Font, ptSize float64, color color.Color, x, y int, s string) error {
 	ctx := freetype.NewContext()
 	ctx.SetDPI(72)
 	ctx.SetFont(font)

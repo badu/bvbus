@@ -25,7 +25,8 @@ const userLocation = inject('userLocation')
 const pathfinderMode = inject('pathfinderMode')
 const terminalChooserVisible = inject('terminalChooserVisible')
 const terminalsList = inject('terminalsList')
-const currentTerminal= inject('currentTerminal')
+const currentTerminal = inject('currentTerminal')
+const metroBusLinesMap= inject('metroBusLinesMap')
 
 watch(selectedBusLine, (newSelectedBusLine) => {
   bussesListVisible.value = false
@@ -78,11 +79,6 @@ const items = ref([
     label: 'Metropolitan Busses',
     icon: 'pi pi-external-link',
     command: () => {
-      toast.add({
-        severity: 'error',
-        summary: "Metropolitan busses not implemented",
-        life: 3000
-      })
       metroBussesListVisible.value = true
     }
   },
@@ -104,50 +100,98 @@ const loadTimetablesForStation = async () => {
   const now = new Date()
   const minutes = now.getHours() * 60 + now.getMinutes()
   loadingInProgress.value = true
+
+
   await loadStationTimetables(selectedStartStation.value.i, (data) => {
     const newTimes = []
     const extraTimes = []
     const busNoMap = new Map()
     data.forEach((busData) => {
-      if (busLinesMap.has(busData.b)) {
-        const busLine = busLinesMap.get(busData.b)
-        if (!busNoMap.has(busLine.n)) {
-          busNoMap.set(busLine.n, true)
-          selectedStartStation.value.busses.push({busNo: busLine.n, c: busLine.c, bc: busLine.bc})
+      if (selectedStartStation.value.o){
+        // metropolitan
+        if (metroBusLinesMap.has(busData.b)) {
+          const busLine = metroBusLinesMap.get(busData.b)
+          if (!busNoMap.has(busLine.n)) {
+            busNoMap.set(busLine.n, true)
+            selectedStartStation.value.busses.push({busNo: busLine.n, c: busLine.c, bc: busLine.bc})
+          }
+
+          busData.t.forEach((time) => {
+            const row = {
+              to: busLine.t,
+              busNo: busLine.n,
+              c: busLine.c,
+              bc: busLine.bc,
+              future: true,
+            }
+            decompressDateTime(row, time)
+
+            if (isWeekend) {
+              if (row.day === 2 || row.day === 3 || row.day === 4) {
+                if (minutes >= row.minutes) {
+                  row.future = false
+                }
+                newTimes.push(row)
+              } else {
+                extraTimes.push(row)
+              }
+            } else {
+              if (row.day === 1) {
+                if (minutes >= row.minutes) {
+                  row.future = false
+                }
+                newTimes.push(row)
+              } else {
+                extraTimes.push(row)
+              }
+            }
+
+          })
         }
-
-        busData.t.forEach((time) => {
-          const row = {
-            to: busLine.t,
-            busNo: busLine.n,
-            c: busLine.c,
-            bc: busLine.bc,
-            future: true,
-          }
-          decompressDateTime(row, time)
-
-          if (isWeekend) {
-            if (row.day === 2 || row.day === 3 || row.day === 4) {
-              if (minutes >= row.minutes) {
-                row.future = false
-              }
-              newTimes.push(row)
-            } else {
-              extraTimes.push(row)
-            }
-          } else {
-            if (row.day === 1) {
-              if (minutes >= row.minutes) {
-                row.future = false
-              }
-              newTimes.push(row)
-            } else {
-              extraTimes.push(row)
-            }
+      }else{
+        // urban
+        if (busLinesMap.has(busData.b)) {
+          const busLine = busLinesMap.get(busData.b)
+          if (!busNoMap.has(busLine.n)) {
+            busNoMap.set(busLine.n, true)
+            selectedStartStation.value.busses.push({busNo: busLine.n, c: busLine.c, bc: busLine.bc})
           }
 
-        })
+          busData.t.forEach((time) => {
+            const row = {
+              to: busLine.t,
+              busNo: busLine.n,
+              c: busLine.c,
+              bc: busLine.bc,
+              future: true,
+            }
+            decompressDateTime(row, time)
+
+            if (isWeekend) {
+              if (row.day === 2 || row.day === 3 || row.day === 4) {
+                if (minutes >= row.minutes) {
+                  row.future = false
+                }
+                newTimes.push(row)
+              } else {
+                extraTimes.push(row)
+              }
+            } else {
+              if (row.day === 1) {
+                if (minutes >= row.minutes) {
+                  row.future = false
+                }
+                newTimes.push(row)
+              } else {
+                extraTimes.push(row)
+              }
+            }
+
+          })
+        }
       }
+
+
 
       newTimes.sort((a, b) => a.encTime - b.encTime)
       extraTimes.sort((a, b) => a.encTime - b.encTime)
@@ -231,6 +275,7 @@ onMounted(() => {
     <TimeTable/>
     <BusLine/>
     <Busses/>
+    <MetroBusses/>
     <TerminalChooser/>
   </div>
 

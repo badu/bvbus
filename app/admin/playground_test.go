@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/png"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/golang/freetype"
 	"github.com/golang/geo/s2"
 	"github.com/mattn/go-sqlite3"
 	"github.com/qedus/osmpbf"
@@ -905,12 +907,19 @@ func TestGenerateStationsJS(t *testing.T) {
 		t.Fatalf("error reading stations : %#v", err)
 	}
 
-	// var outsideStations strings.Builder
+	var outsideStations strings.Builder
 	var insideStations strings.Builder
 	insideStations.WriteString("const stations = [")
+	outsideStations.WriteString("const metroStations = [")
 	for _, station := range stations {
 		if station.IsOutsideCity {
-
+			var data string
+			if station.HasBoard {
+				data = fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%.07f,%q:%.07f,%q:true,%q:true},\n", "i", station.OSMID, "n", station.Name, "s", station.StreetName, "lt", station.Lat, "ln", station.Lon, "b", "o")
+			} else {
+				data = fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%.07f,%q:%.07f,%q:true},\n", "i", station.OSMID, "n", station.Name, "s", station.StreetName, "lt", station.Lat, "ln", station.Lon, "o")
+			}
+			outsideStations.WriteString(data)
 		} else {
 			var data string
 			if station.HasBoard {
@@ -921,9 +930,15 @@ func TestGenerateStationsJS(t *testing.T) {
 			insideStations.WriteString(data)
 		}
 	}
-	insideStations.WriteString("]\nexport default stations;\n")
 
+	insideStations.WriteString("]\nexport default stations;\n")
 	err = os.WriteFile("./../../frontend/web/src/urban_stations.js", []byte(insideStations.String()), 0644)
+	if err != nil {
+		t.Fatalf("error writing urban_stations.js : %#v", err)
+	}
+
+	outsideStations.WriteString("]\nexport default metroStations;\n")
+	err = os.WriteFile("./../../frontend/web/src/metro_stations.js", []byte(outsideStations.String()), 0644)
 	if err != nil {
 		t.Fatalf("error writing urban_stations.js : %#v", err)
 	}
@@ -943,35 +958,44 @@ func TestGenerateBussesJS(t *testing.T) {
 	}
 
 	var urbanBusses strings.Builder
+	var metropolitanBusses strings.Builder
 	urbanBusses.WriteString("const busses = [")
+	metropolitanBusses.WriteString("const metroBusses = [")
 	for _, line := range busses {
+		from := replaceDiacritics(line.From)
+		to := replaceDiacritics(line.To)
+		stationIDs, err := repo.GetStationsForBus(line.OSMID)
+		if err != nil {
+			t.Fatalf("error getting stations ids for bus: %#v", err)
+		}
+
+		ids := ""
+		for i, stationID := range stationIDs {
+			if i > 0 {
+				ids += ","
+			}
+			ids += strconv.Itoa(int(stationID))
+		}
+
 		if line.IsMetropolitan {
+			data := fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%q,%q:%q,%q:%q,%q:%d,%q:[%s]},\n", "i", line.OSMID, "b", line.Name, "f", from, "t", to, "n", line.Line, "c", line.Color, "d", line.Dir, "s", ids)
 
+			metropolitanBusses.WriteString(data)
 		} else {
-			stationIDs, err := repo.GetStationsForBus(line.OSMID)
-			if err != nil {
-				t.Fatalf("error getting stations ids for bus: %#v", err)
-			}
-
-			ids := ""
-			for i, stationID := range stationIDs {
-				if i > 0 {
-					ids += ","
-				}
-				ids += strconv.Itoa(int(stationID))
-			}
-
-			from := replaceDiacritics(line.From)
-			to := replaceDiacritics(line.To)
-
 			data := fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%q,%q:%q,%q:%q,%q:%d,%q:[%s]},\n", "i", line.OSMID, "b", line.Name, "f", from, "t", to, "n", line.Line, "c", line.Color, "d", line.Dir, "s", ids)
 
 			urbanBusses.WriteString(data)
 		}
 	}
-	urbanBusses.WriteString("]\nexport default busses;\n")
 
+	urbanBusses.WriteString("]\nexport default busses;\n")
 	err = os.WriteFile("./../../frontend/web/src/urban_busses.js", []byte(urbanBusses.String()), 0644)
+	if err != nil {
+		t.Fatalf("error writing urban_busses.js : %#v", err)
+	}
+
+	metropolitanBusses.WriteString("]\nexport default metroBusses;\n")
+	err = os.WriteFile("./../../frontend/web/src/metro_busses.js", []byte(metropolitanBusses.String()), 0644)
 	if err != nil {
 		t.Fatalf("error writing urban_busses.js : %#v", err)
 	}
@@ -1007,6 +1031,18 @@ func TestGenerateTiles(t *testing.T) {
 	var wg sync.WaitGroup
 	tasks := make(chan [2]interface{}, 8)
 
+	font_, err := os.ReadFile("./../../frontend/web/public/Roboto-Regular.ttf")
+	if err != nil {
+		logger.Warn("error reading font file", "err", err)
+	}
+
+	font, err := freetype.ParseFont(font_)
+	if err != nil {
+		logger.Warn("error parsing font file", "err", err)
+	}
+
+	dimmedYellow := color.RGBA{R: 0xF5, G: 0xB3, B: 0x01, A: 0xFF}
+
 	t.Logf("start %d workers", runtime.NumCPU())
 	for i := 0; i < runtime.NumCPU(); i++ {
 		go func(num int) {
@@ -1039,7 +1075,21 @@ func TestGenerateTiles(t *testing.T) {
 					styles:    styles,
 				}
 
-				result.Draw(data)
+				features := result.Draw(data)
+				for _, feature := range features {
+					if feature.IsWay() {
+						continue
+					}
+
+					place, ok := feature.(Node)
+					if ok {
+						placeX, placeY := result.GetRelativeXY(place)
+						err = drawText(img, font, 25, dimmedYellow, int(placeX), int(placeY), place.Tags["name"])
+						if err != nil {
+							logger.Warn("error drawing text", "err", err)
+						}
+					}
+				}
 
 				filePath := fmt.Sprintf("%d/%d/%d.png", zoom, xyz.X, xyz.Y)
 				out, err := os.Create("./../../frontend/web/public/" + filePath)
