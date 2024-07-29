@@ -51,7 +51,7 @@ const onStationClicked = (event, data) => {
 const responsiveOptions = ref([
   {
     breakpoint: '1400px',
-    numVisible: 2,
+    numVisible: 3,
     numScroll: 1
   },
   {
@@ -70,6 +70,7 @@ const responsiveOptions = ref([
     numScroll: 1
   }
 ])
+
 </script>
 
 <template>
@@ -83,36 +84,35 @@ const responsiveOptions = ref([
       <Tag
           :rounded="true"
           :value="selectedBusLine.n"
-          :style="'font-family:TheLedDisplaySt;min-width:40px;user-select:none;background-color:'+ selectedBusLine.c"/>
+          :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: selectedBusLine.c,color:selectedBusLine.bc}"/>
       <h2 style="color: #FED053;user-select: none;"> {{ selectedBusLine.b }} (Urban)</h2>
 
     </template>
 
     <Timeline :value="stations" align="alternate">
       <template #content="slotProps">
-        <h3 @click="onStationClicked($event, slotProps.item)">{{ slotProps.item.n }}</h3>
+        <h3 @click="onStationClicked($event, slotProps.item)" style="color: #FED053;user-select: none;">
+          <b>{{ slotProps.item.n }}</b></h3>
       </template>
 
       <template #opposite="slotProps">
-        <div style="display: flex;flex-direction: row;align-items: center;align-content:end">
-          <Carousel :value="slotProps.item.otherBusses"
-                    :responsiveOptions="responsiveOptions"
-                    :numVisible="3"
-                    :numScroll="1"
-                    circular
-                    :autoplayInterval="3000"
-                    :showIndicators="false"
-                    :showNavigators="false"
-                    style="max-width: 30%">
-            <template #item="slotProps">
-              <Tag
-                  @click="onBusNumberClicked($event,slotProps.data)"
-                  :rounded="true"
-                  :value="slotProps.data.n"
-                  :style="'font-family:TheLedDisplaySt;min-width:40px;user-select:none;color:\'#1E232B\'background-color:'+ slotProps.data.c"/>
-            </template>
-          </Carousel>
-        </div>
+        <Carousel :value="slotProps.item.otherBusses"
+                  :responsiveOptions="responsiveOptions"
+                  :numVisible="3"
+                  :numScroll="1"
+                  circular
+                  :autoplayInterval="3000"
+                  :showIndicators="false"
+                  :showNavigators="false">
+          <template #item="slotProps">
+            <Tag
+                :style="{ minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c, color:slotProps.data.bc }"
+                @click="onBusNumberClicked($event,slotProps.data)"
+                :rounded="true"
+                :value="slotProps.data.n"/>
+          </template>
+        </Carousel>
+
       </template>
     </Timeline>
   </Drawer>

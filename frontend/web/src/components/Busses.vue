@@ -35,7 +35,7 @@ const onBusSelect = (event) => {
         <template #body="slotProps">
           <Tag :rounded="true"
                :value="slotProps.data.n"
-               :style="'font-family:TheLedDisplaySt;min-width:40px;color:\'#1E232B\';background-color:'+ slotProps.data.c"/>
+               :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.bc}"/>
         </template>
       </Column>
       <Column field="f" header="From" style="color: #FED053;user-select: none;"/>

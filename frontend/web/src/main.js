@@ -1,9 +1,9 @@
 import './assets/main.css'
+import {createApp} from 'vue'
+import PrimeVue from 'primevue/config'
 import Button from "primevue/button"
 import Checkbox from "primevue/checkbox"
-import PrimeVue from 'primevue/config'
 import Lara from '@primevue/themes/lara'
-import {createApp} from 'vue'
 import Tag from 'primevue/tag'
 import Ripple from "primevue/ripple";
 import Toast from 'primevue/toast'
@@ -32,6 +32,33 @@ import BusLine from "@/components/BusLine.vue"
 import Busses from "@/components/Busses.vue";
 import TimeTable from "@/components/TimeTable.vue"
 import TerminalChooser from "@/components/TerminalChooser.vue";
+import {$dt, definePreset} from "@primevue/themes";
+
+const MyPreset = definePreset(Lara, {
+    semantic: {
+        colorScheme: {
+            dark: {
+                /** #1E232B #2A2E34 #3B3F46 #EC9C04 #F5B301 #FED053 **/
+                primary: {
+                    color: '#EC9C04',
+                    contrastColor: '#FED053',
+                    hoverColor: '#F5B301',
+                    activeColor: '#F5B301'
+                },
+                highlight: {
+                    background: '#1E232B',
+                    focusBackground: '#FED053',
+                    color: '#EC9C04',
+                    focusColor: '#FED053'
+                }
+            }
+        }
+    }
+})
+
+const primaryColor = $dt('primary.color')
+console.log('primaryColor', primaryColor, $dt('blue.500').value)
+primaryColor.value = '#1E232B'
 
 const app = createApp(App)
 app.use(router)
@@ -39,7 +66,7 @@ app.use(ToastService)
 app.use(PrimeVue, {
     ripple: true,
     theme: {
-        preset: Lara,
+        preset: MyPreset,
         options: {
             darkModeSelector: '.dark-mode',
         }

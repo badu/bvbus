@@ -370,11 +370,34 @@ func ServeTiles(logger *slog.Logger, pbfFilePath string, repo *Repository) func(
 		if err := os.MkdirAll(dirPath, 0755); err != nil {
 			logger.Error("error creating folder", "folder", dirPath, "err", err)
 		}
+
 		filePath := fmt.Sprintf(wd+"/frontend/web/public/%d/%d/%d.png", zoom, x, y)
 		if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
-			// logger.Warn("requested file doesn't exist", "file", filePath)
+
 		} else {
-			// logger.Info("file exists", "file", filePath)
+			logger.Info("serving existing file", "file", filePath)
+			file, err := os.Open(filePath)
+			if err != nil {
+				http.Error(w, "Image not found", http.StatusNotFound)
+				return
+			}
+			defer file.Close()
+
+			img, err := png.Decode(file)
+			if err != nil {
+				http.Error(w, "Error decoding image", http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "image/png")
+
+			err = png.Encode(w, img)
+			if err != nil {
+				http.Error(w, "Error encoding image", http.StatusInternalServerError)
+				return
+			}
+
+			return
 		}
 
 		northWestPoint := GetPointByCoords(x, y, zoom)
@@ -397,6 +420,24 @@ func ServeTiles(logger *slog.Logger, pbfFilePath string, repo *Repository) func(
 		}
 
 		result.Draw(data)
+
+		if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
+			out, err := os.Create(filePath)
+			if err != nil {
+				logger.Warn("error creating file", "file", filePath, "err", err)
+			}
+
+			err = png.Encode(out, result.image)
+			if err != nil {
+				logger.Error("error encoding PNG tile", "err", err)
+				return
+			}
+
+			err = out.Close()
+			if err != nil {
+				logger.Warn("error closing file", "file", filePath, "err", err)
+			}
+		}
 
 		err = png.Encode(w, result.image)
 		if err != nil {

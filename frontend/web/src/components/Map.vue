@@ -15,7 +15,7 @@ import {easeOut} from 'ol/easing'
 import {getVectorContext} from "ol/render"
 import {boundingExtent} from "ol/extent.js"
 
-const emit = defineEmits(['selectStation', 'deselectStation','terminalChooser'])
+const emit = defineEmits(['selectStation', 'deselectStation', 'terminalChooser'])
 
 const mapCenter = inject('mapCenter')
 const mapZoom = inject('mapZoom')
@@ -101,8 +101,10 @@ const clusterStyle = (feature, resolution) => {
   return new Style({image: imageIcon, text: clusterText})
 }
 
+const defaultDistance = 60
+const atZoomDistance = 10
 const clusterSource = new VectorSource()
-const cluster = new Cluster({source: clusterSource, distance: 60})
+const cluster = new Cluster({source: clusterSource, distance: defaultDistance})
 const clusterLayer = new VectorLayer({source: cluster, style: clusterStyle})
 
 const customTileLayer = new TileLayer({
@@ -110,6 +112,7 @@ const customTileLayer = new TileLayer({
     url: './{z}/{x}/{y}.png',
     minZoom: mapZoom.value,
     maxZoom: maxZoom.value,
+    tileSize: 2048,
   })
 })
 
@@ -189,7 +192,11 @@ onMounted(async () => {
   })
 
   view.on('change:resolution', () => {
-    //console.log('zoom and resolution', view.getZoom(), view.getResolution())
+    if (view.getZoom() > 17) {
+      cluster.setDistance(atZoomDistance)
+    } else {
+      cluster.setDistance(defaultDistance)
+    }
   })
 
   map.on('click', (e) => {
@@ -206,7 +213,7 @@ onMounted(async () => {
             if (feature.get('isTerminal')) {
               for (let i = 0; i < terminals.length; i++) {
                 if (terminals[i].i === feature.getId()) {
-                  emit('terminalChooser',{terminal:terminals[i]})
+                  emit('terminalChooser', {terminal: terminals[i]})
                   break
                 }
               }

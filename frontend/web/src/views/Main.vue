@@ -13,7 +13,6 @@ const naturalSortBussesNo = inject('naturalSortBussesNo')
 const selectedStartStation = inject('selectedStartStation')
 const loadStationTimetables = inject('loadStationTimetables')
 const selectedStations = inject('selectedStations')
-const loadBusTimetables = inject('loadBusTimetables')
 const extraTimetable = inject('extraTimetable')
 const currentTimetable = inject('currentTimetable')
 const timetableVisible = inject('timetableVisible')
@@ -26,6 +25,7 @@ const userLocation = inject('userLocation')
 const pathfinderMode = inject('pathfinderMode')
 const terminalChooserVisible = inject('terminalChooserVisible')
 const terminalsList = inject('terminalsList')
+const currentTerminal= inject('currentTerminal')
 
 watch(selectedBusLine, (newSelectedBusLine) => {
   bussesListVisible.value = false
@@ -113,13 +113,15 @@ const loadTimetablesForStation = async () => {
         const busLine = busLinesMap.get(busData.b)
         if (!busNoMap.has(busLine.n)) {
           busNoMap.set(busLine.n, true)
-          selectedStartStation.value.busses.push({busNo: busLine.n, color: busLine.c})
+          selectedStartStation.value.busses.push({busNo: busLine.n, c: busLine.c, bc: busLine.bc})
         }
+
         busData.t.forEach((time) => {
           const row = {
             to: busLine.t,
             busNo: busLine.n,
-            color: busLine.c,
+            c: busLine.c,
+            bc: busLine.bc,
             future: true,
           }
           decompressDateTime(row, time)
@@ -191,6 +193,7 @@ const onDeselectStation = (event) => {
 
 const onTerminalChooser = (event) => {
   const newTerminalsList = []
+  currentTerminal.value = event.terminal
   event.terminal.c.forEach((choice) => {
     newTerminalsList.push({i: choice.i, s: choice.s, busses: choice.busses})
   })
@@ -209,14 +212,17 @@ onMounted(() => {
 <template>
   <div class="parent items-center">
     <div class="parent">
-      <Map class="child" @selectStation="onSelectStation" @deselectStation="onDeselectStation"
+      <Map class="child"
+           @selectStation="onSelectStation"
+           @deselectStation="onDeselectStation"
            @terminalChooser="onTerminalChooser"/>
       <div style="position: relative; bottom: 10%; right:10%">
         <SpeedDial :model="items"
                    :radius="180"
                    type="quarter-circle"
                    direction="up-left"
-                   :style="{ position: 'absolute', right: 0, bottom: 0, color: '#FED053', 'background-color':'#1E232B' }"/>
+                   :pt="{ pcbutton:{root:{class:'my-speeddial-button'}}}"
+                   :style="{ position: 'absolute', right: 0, bottom: 0 }"/>
       </div>
     </div>
 
@@ -235,6 +241,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
+
+
 .parent {
   position: relative;
   display: flex;

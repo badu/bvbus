@@ -111,12 +111,11 @@ const responsiveOptions = ref([
                 :autoplayInterval="3000"
                 :showIndicators="false"
                 :showNavigators="false">
-
         <template #item="slotProps">
           <Tag
               :rounded="true"
               :value="slotProps.data.busNo"
-              :style="'font-family:TheLedDisplaySt;min-width:40px;user-select:none;color:\'#1E232B\';background-color:'+ slotProps.data.color"/>
+              :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.bc}" />
         </template>
       </Carousel>
 
@@ -148,7 +147,7 @@ const responsiveOptions = ref([
             <Tag :rounded="true"
                  @click="onBusNumberClicked"
                  :value="slotProps.data.busNo"
-                 :style="'font-family:TheLedDisplaySt;min-width:40px;background-color:'+ slotProps.data.color"/>
+                 :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.bc}" />
             <span style="color: #FED053;user-select: none;margin:5%;">{{ slotProps.data.to }}</span>
           </template>
         </Column>

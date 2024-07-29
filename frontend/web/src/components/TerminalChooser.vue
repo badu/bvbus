@@ -5,13 +5,14 @@ const terminalChooserVisible = inject('terminalChooserVisible')
 const terminalsList = inject('terminalsList')
 const selectedStartStation = inject('selectedStartStation')
 const busStationsMap = inject('busStationsMap')
+const currentTerminal = inject('currentTerminal')
 
 const onChosenTerminal = (event) => {
   if (busStationsMap.has(event.data.i)) {
     selectedStartStation.value = busStationsMap.get(event.data.i)
     terminalChooserVisible.value = false
-  }else{
-    console.error('station not found?',event.data)
+  } else {
+    console.error('station not found?', event.data)
   }
 }
 </script>
@@ -23,7 +24,7 @@ const onChosenTerminal = (event) => {
       :showCloseIcon="true"
       style="background-color: #1E232B">
     <template #header>
-      Here
+      Terminal {{ currentTerminal.n }}
     </template>
     <template #default>
       <DataTable :value="terminalsList"

@@ -188,23 +188,26 @@ func widthOfString(font *truetype.Font, size float64, s string) float64 {
 type XYZ struct {
 	X, Y, Z int
 }
+
 type Bounds struct {
 	XFrom, XTo, YFrom, YTo int
 }
 
 func GetTilesInBBoxForZoom(northWestLat, northWestLong, southEastLat, southEastLong float64, zoom int) ([]XYZ, Bounds) {
-	n := math.Exp2(float64(zoom))
-	northWestX := int(math.Floor((northWestLong + 180.0) / 360.0 * n))
-	if float64(northWestX) >= n {
-		northWestX = int(n - 1)
-	}
-	northWestY := int(math.Floor((1.0 - math.Log(math.Tan(northWestLat*math.Pi/180.0)+1.0/math.Cos(northWestLat*math.Pi/180.0))/math.Pi) / 2.0 * n))
+	noOfTiles := math.Exp2(float64(zoom))
+	const piOverOneEighty = math.Pi / 180.0
 
-	southEastX := int(math.Floor((southEastLong + 180.0) / 360.0 * n))
-	if float64(southEastX) >= n {
-		southEastX = int(n - 1)
+	northWestX := int(math.Floor((northWestLong + 180.0) / 360.0 * noOfTiles))
+	if float64(northWestX) >= noOfTiles {
+		northWestX = int(noOfTiles - 1)
 	}
-	southEastY := int(math.Floor((1.0 - math.Log(math.Tan(southEastLat*math.Pi/180.0)+1.0/math.Cos(southEastLat*math.Pi/180.0))/math.Pi) / 2.0 * n))
+	northWestY := int(math.Floor((1.0 - math.Log(math.Tan(northWestLat*piOverOneEighty)+1.0/math.Cos(northWestLat*piOverOneEighty))/math.Pi) / 2.0 * noOfTiles))
+
+	southEastX := int(math.Floor((southEastLong + 180.0) / 360.0 * noOfTiles))
+	if float64(southEastX) >= noOfTiles {
+		southEastX = int(noOfTiles - 1)
+	}
+	southEastY := int(math.Floor((1.0 - math.Log(math.Tan(southEastLat*piOverOneEighty)+1.0/math.Cos(southEastLat*piOverOneEighty))/math.Pi) / 2.0 * noOfTiles))
 
 	var result []XYZ
 	for x := northWestX; x <= southEastX; x++ {

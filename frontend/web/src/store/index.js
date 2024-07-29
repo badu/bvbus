@@ -33,6 +33,15 @@ export const store = () => {
     const stationsLinesMap = new Map()
     const busLinesMap = new Map()
     for (let i = 0; i < urban_busses.length; i++) {
+        const hex = urban_busses[i].c.replace('#', '')
+
+        const r = parseInt(hex.substring(0, 2), 16)
+        const g = parseInt(hex.substring(2, 4), 16)
+        const b = parseInt(hex.substring(4, 6), 16)
+
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        urban_busses[i].bc = brightness > 155 ? '#1E232B' : '#FED053'
+
         for (let j = 0; j < urban_busses[i].s.length; j++) {
             if (!stationsLinesMap.has(urban_busses[i].s[j])) {
                 stationsLinesMap.set(urban_busses[i].s[j], new Map().set(urban_busses[i].i, true))
@@ -125,6 +134,7 @@ export const store = () => {
 
     const terminalChooserVisible = ref(false)
     const terminalsList = ref([])
+    const currentTerminal = ref(null)
     return {
         busStations,
         busLines,
@@ -154,6 +164,7 @@ export const store = () => {
         terminalsMap,
         terminalsData,
         terminalChooserVisible,
-        terminalsList
+        terminalsList,
+        currentTerminal
     }
 }

@@ -1069,7 +1069,7 @@ func TestGenerateTiles(t *testing.T) {
 		}(i)
 	}
 
-	for _, zoom := range []int{13, 14, 15, 16, 17} {
+	for _, zoom := range []int{13, 14, 15} {
 		xyzts, bounds := GetTilesInBBoxForZoom(45.00, 25.00, 46.00, 26.00, zoom)
 		t.Logf("saving %d tiles", len(xyzts))
 		for _, xyz := range xyzts {
