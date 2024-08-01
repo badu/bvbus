@@ -3,10 +3,10 @@ import {computed, inject, ref, watch} from "vue";
 
 const busLinesMap = inject('busLinesMap')
 const busStationsMap = inject('busStationsMap')
-const stationsLinesMap = inject('stationsLinesMap')
+const stationsToLinesMap = inject('stationsToLinesMap')
 const metroBusLinesMap = inject('metroBusLinesMap')
 const metroBusStationsMap = inject('metroBusStationsMap')
-const metroStationsLinesMap = inject('metroStationsLinesMap')
+const metroStationsToLinesMap = inject('metroStationsToLinesMap')
 const selectedBusLine = inject('selectedBusLine')
 const buslineVisible = inject('buslineVisible')
 const stations = ref([])
@@ -19,7 +19,7 @@ watch(selectedBusLine, (newSelectedBusLine) => {
       if (metroBusStationsMap.has(stationId)) {
         const station = {...metroBusStationsMap.get(stationId)}
         station.otherBusses = []
-        const otherLines = metroStationsLinesMap.get(stationId)
+        const otherLines = metroStationsToLinesMap.get(stationId)
         for (let lineId of otherLines.keys()) {
           if (lineId === newSelectedBusLine.i) {
             continue
@@ -39,7 +39,7 @@ watch(selectedBusLine, (newSelectedBusLine) => {
       if (busStationsMap.has(stationId)) {
         const station = {...busStationsMap.get(stationId)}
         station.otherBusses = []
-        const otherLines = stationsLinesMap.get(stationId)
+        const otherLines = stationsToLinesMap.get(stationId)
         for (let lineId of otherLines.keys()) {
           if (lineId === newSelectedBusLine.i) {
             continue
@@ -92,12 +92,12 @@ const onStationClicked = (event, data) => {
     <template #header>
       <div style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;">
         <Tag>
-          <img src="./../../svgs/bus.svg" style="height: 30px;width: 30px;"/>
+          <img src="/svgs/bus.svg" style="height: 30px;width: 30px;"/>
         </Tag>
         <Tag
             :rounded="true"
             :value="selectedBusLine.n"
-            :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: selectedBusLine.c,color:selectedBusLine.bc}"/>
+            :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: selectedBusLine.c,color:selectedBusLine.tc}"/>
 
         <h2 style="color: #FED053;user-select: none;">{{ selectedBusLine.b }}</h2>
       </div>
@@ -117,7 +117,7 @@ const onStationClicked = (event, data) => {
               <Tag
                   :rounded="true"
                   :value="bus.n"
-                  :style="{minWidth: '40px', maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.bc}"/>
+                  :style="{minWidth: '40px', maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc}"/>
               {{ bus.f }} - {{ bus.t }}
             </div>
           </template>

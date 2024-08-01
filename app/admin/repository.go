@@ -48,21 +48,64 @@ type LineNumberAndTime struct {
 	Times     []uint16  `json:"t,omitempty"`
 }
 
+type Lines []*LineNumberAndTime
+
 type Station struct {
-	OSMID         int64                `json:"i"`
-	Index         int                  `json:"d"`
-	Name          string               `json:"n"`
-	Street        sql.NullString       `json:"-"`
-	StreetName    string               `json:"s,omitempty"`
-	Lat           float64              `json:"lt"`
-	Lon           float64              `json:"ln"`
-	HasBoard      bool                 `json:"b,omitempty"`
-	IsOutsideCity bool                 `json:"o,omitempty"`
-	Lines         []*LineNumberAndTime `json:"l,omitempty"`
+	OSMID         int64          `json:"i"`
+	Index         int            `json:"d"`
+	Name          string         `json:"n"`
+	Street        sql.NullString `json:"-"`
+	StreetName    string         `json:"s,omitempty"`
+	Lat           float64        `json:"lt"`
+	Lon           float64        `json:"ln"`
+	HasBoard      bool           `json:"b,omitempty"`
+	IsOutsideCity bool           `json:"o,omitempty"`
+	Lines         Lines          `json:"l,omitempty"`
 }
 
 func (s Station) ID() int64 {
 	return s.OSMID
+}
+
+func (l Lines) HasBus(busID int64) bool {
+	for _, line := range l {
+		if line.BusOSMID == busID {
+			return true
+		}
+	}
+	return false
+}
+
+func (l Lines) GetFirstEntry(busID int64) (*Time, bool) {
+	for _, line := range l {
+		if line.BusOSMID == busID {
+			if len(line.Times) == 0 {
+				return nil, false
+			}
+			result := Time{}
+			result.Decompress(line.Times[0])
+			return &result, true
+		}
+	}
+	return nil, false
+}
+
+func (l Lines) GetFirstEntryAfter(busID int64, t *Time) (*Time, bool) {
+	for _, line := range l {
+		if line.BusOSMID == busID {
+			if len(line.Times) == 0 {
+				return nil, false
+			}
+			result := Time{}
+			for _, ctime := range line.Times {
+				result.Decompress(ctime)
+				if t.After(result) {
+					return &result, true
+				}
+			}
+		}
+	}
+	return nil, false
 }
 
 type Busline struct {
@@ -426,6 +469,7 @@ func (r *Repository) LoadNewStreetPoints(bussesData Data) (map[int64][]Node, err
 						return nil, err
 					}
 				} else {
+					r.Logger.Error("error inserting relation", "err", err)
 					if err := tx.Rollback(); err != nil {
 						return nil, err
 					}
@@ -452,6 +496,8 @@ func (r *Repository) LoadNewStreetPoints(bussesData Data) (map[int64][]Node, err
 				refVal = strings.ReplaceAll(refVal, "B", "")
 				refVal = strings.ReplaceAll(refVal, "M", "")
 				refVal = strings.ReplaceAll(refVal, "S", "")
+				refVal = strings.ReplaceAll(refVal, "R", "")
+				refVal = strings.ReplaceAll(refVal, "T", "")
 				ref, refErr := strconv.ParseInt(refVal, 10, 64)
 				if refErr != nil {
 					r.Logger.Error("error parsing int", "err", err, "val", element.Tags["ref"])
@@ -535,10 +581,21 @@ func (r *Repository) LoadNewStreetPoints(bussesData Data) (map[int64][]Node, err
 
 				_, err = relsStmt.Exec(wayNode.ID, pointIndex, busID, itsAStop)
 				if err != nil {
-					if err := tx.Rollback(); err != nil {
+					var sqliteErr sqlite3.Error
+					if errors.As(err, &sqliteErr) {
+						if !errors.Is(sqliteErr.Code, sqlite3.ErrConstraint) {
+							if err := tx.Rollback(); err != nil {
+								return nil, err
+							}
+							return nil, err
+						}
+					} else {
+						r.Logger.Error("error inserting relation [1]", "err", err)
+						if err := tx.Rollback(); err != nil {
+							return nil, err
+						}
 						return nil, err
 					}
-					return nil, err
 				}
 
 				seen[wayNode.ID] = struct{}{}
@@ -573,10 +630,21 @@ func (r *Repository) LoadNewStreetPoints(bussesData Data) (map[int64][]Node, err
 
 					_, err = relsStmt.Exec(wayNode.ID, pointIndex, busID, itsAStop)
 					if err != nil {
-						if err := tx.Rollback(); err != nil {
+						var sqliteErr sqlite3.Error
+						if errors.As(err, &sqliteErr) {
+							if !errors.Is(sqliteErr.Code, sqlite3.ErrConstraint) {
+								if err := tx.Rollback(); err != nil {
+									return nil, err
+								}
+								return nil, err
+							}
+						} else {
+							r.Logger.Error("error inserting relation [2]", "err", err)
+							if err := tx.Rollback(); err != nil {
+								return nil, err
+							}
 							return nil, err
 						}
-						return nil, err
 					}
 
 					seen[wayNode.ID] = struct{}{}

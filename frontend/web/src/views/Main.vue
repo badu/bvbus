@@ -7,20 +7,15 @@ import TerminalChooser from "@/components/TerminalChooser.vue";
 const toast = inject('toast')
 const busStationsMap = inject('busStationsMap')
 const busLinesMap = inject('busLinesMap')
-const isWeekend = inject('isWeekend')
-const decompressDateTime = inject('decompressDateTime')
-const naturalSortBussesNo = inject('naturalSortBussesNo')
 const selectedStartStation = inject('selectedStartStation')
 const selectedDestinationStation = inject('selectedDestinationStation')
 const loadStationTimetables = inject('loadStationTimetables')
 const loadDirectPathFinder = inject('loadDirectPathFinder')
 const loadIndirectPathFinder = inject('loadIndirectPathFinder')
 const loadBusPoints = inject('loadBusPoints')
-const extraTimetable = inject('extraTimetable')
-const currentTimetable = inject('currentTimetable')
-const timetableVisible = inject('timetableVisible')
 const bussesListVisible = inject('bussesListVisible')
 const metroBussesListVisible = inject('metroBussesListVisible')
+const timetableVisible = inject('timetableVisible')
 const buslineVisible = inject('buslineVisible')
 const selectedBusLine = inject('selectedBusLine')
 const loadingInProgress = inject('loadingInProgress')
@@ -29,8 +24,8 @@ const pathfinderMode = inject('pathfinderMode')
 const terminalChooserVisible = inject('terminalChooserVisible')
 const terminalsList = inject('terminalsList')
 const currentTerminal = inject('currentTerminal')
-const metroBusLinesMap = inject('metroBusLinesMap')
 const brasovMap = ref(null)
+const processTimetables = inject('processTimetables')
 
 watch(selectedBusLine, (newSelectedBusLine) => {
   bussesListVisible.value = false
@@ -91,14 +86,22 @@ const items = ref([
     icon: 'pi pi-cog',
     command: async () => {
       const bus = busLinesMap.get(5390264)
-      await loadBusPoints(
-          5390264,
-          (data) => {
-            brasovMap.value.displayTrajectory(data, bus.c)
-          },
-          () => {
-            console.error('error loading bus points')
-          })
+      if (!bus.points) {
+        loadingInProgress.value = true
+        await loadBusPoints(
+            bus.i,
+            (data) => {
+              bus.points = data
+              loadingInProgress.value = false
+              brasovMap.value.displayTrajectory(bus.points, bus.c)
+            },
+            () => {
+              loadingInProgress.value = false
+              console.error('error loading bus points')
+            })
+      } else {
+        brasovMap.value.displayTrajectory(bus.points, bus.c)
+      }
 
       toast.add({
         severity: 'error',
@@ -110,136 +113,16 @@ const items = ref([
 ])
 
 const loadTimetablesForStation = async () => {
-  const now = new Date()
-  const minutes = now.getHours() * 60 + now.getMinutes()
-  loadingInProgress.value = true
-
-  await loadStationTimetables(selectedStartStation.value.i, (data) => {
-    const newTimes = []
-    const extraTimes = []
-    const busNoMap = new Map()
-    data.forEach((busData) => {
-      if (selectedStartStation.value.o) {
-        // metropolitan
-        if (metroBusLinesMap.has(busData.b)) {
-          const busLine = metroBusLinesMap.get(busData.b)
-          if (!busNoMap.has(busLine.n)) {
-            busNoMap.set(busLine.n, true)
-            const busData = {
-              busNo: busLine.n,
-              c: busLine.c,
-              bc: busLine.bc,
-              f: busLine.f,
-              t: busLine.t
-            }
-            const index = selectedStartStation.value.busses.indexOf(busData)
-            if (index < 0) {
-              selectedStartStation.value.busses.push(busData)
-            }
-          }
-
-          busData.t.forEach((time) => {
-            const row = {
-              to: busLine.t,
-              busNo: busLine.n,
-              c: busLine.c,
-              bc: busLine.bc,
-              future: true,
-            }
-            decompressDateTime(row, time)
-
-            if (isWeekend) {
-              if (row.day === 2 || row.day === 3 || row.day === 4) {
-                if (minutes >= row.minutes) {
-                  row.future = false
-                }
-                newTimes.push(row)
-              } else {
-                extraTimes.push(row)
-              }
-            } else {
-              if (row.day === 1) {
-                if (minutes >= row.minutes) {
-                  row.future = false
-                }
-                newTimes.push(row)
-              } else {
-                extraTimes.push(row)
-              }
-            }
-
-          })
-        }
-      } else {
-        // urban
-        if (busLinesMap.has(busData.b)) {
-          const busLine = busLinesMap.get(busData.b)
-          if (!busNoMap.has(busLine.n)) {
-            busNoMap.set(busLine.n, true)
-            const busData = {
-              busNo: busLine.n,
-              c: busLine.c,
-              bc: busLine.bc,
-              f: busLine.f,
-              t: busLine.t
-            }
-            const index = selectedStartStation.value.busses.indexOf(busData)
-            if (index < 0) {
-              selectedStartStation.value.busses.push(busData)
-            }
-          }
-
-          busData.t.forEach((time) => {
-            const row = {
-              to: busLine.t,
-              busNo: busLine.n,
-              c: busLine.c,
-              bc: busLine.bc,
-              future: true,
-            }
-            decompressDateTime(row, time)
-
-            if (isWeekend) {
-              if (row.day === 2 || row.day === 3 || row.day === 4) {
-                if (minutes >= row.minutes) {
-                  row.future = false
-                }
-                newTimes.push(row)
-              } else {
-                extraTimes.push(row)
-              }
-            } else {
-              if (row.day === 1) {
-                if (minutes >= row.minutes) {
-                  row.future = false
-                }
-                newTimes.push(row)
-              } else {
-                extraTimes.push(row)
-              }
-            }
-
-          })
-        }
-      }
-
-
-      newTimes.sort((a, b) => a.encTime - b.encTime)
-      extraTimes.sort((a, b) => a.encTime - b.encTime)
-
-      selectedStartStation.value.busses.sort(naturalSortBussesNo)
-
-      currentTimetable.value = newTimes
-      extraTimetable.value = extraTimes
-
+  if (!selectedStartStation.value.timetable) {
+    loadingInProgress.value = true
+    await loadStationTimetables(selectedStartStation.value.i, processTimetables, () => {
+      console.error('error loading time tables', selectedStartStation.value.i)
+      toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
       loadingInProgress.value = false
-      timetableVisible.value = true
     })
-  }, () => {
-    console.error('error loading time tables', selectedStartStation.value.i)
-    toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
-    loadingInProgress.value = false
-  })
+  } else {
+    timetableVisible.value = true
+  }
 }
 
 const onSelectStation = async (event) => {
@@ -300,22 +183,91 @@ const onTerminalChooser = (event) => {
   const newTerminalsList = []
   currentTerminal.value = event.terminal
   event.terminal.c.forEach((choice) => {
-    newTerminalsList.push({i: choice.i, s: choice.s, busses: choice.busses})
+    if (choice.busses.length > 0) {
+      newTerminalsList.push({i: choice.i, s: choice.s, busses: choice.busses})
+    } else {
+      console.error("choice with no busses", choice)
+    }
   })
   terminalsList.value = newTerminalsList
   terminalChooserVisible.value = true
 }
 
-onMounted(() => {
+onMounted(async () => {
   //onSelectStation({featureId: 3713443720})
   //selectedBusLine.value = busLinesMap.get(5417775)
   //buslineVisible.value = true
 
-  //selectedStartStation.value = busStationsMap.get(272095075)
-  //selectedStartStation.value.busses = []
+  selectedStartStation.value = busStationsMap.get(273437289)
+  selectedStartStation.value.busses = []
 
-  //selectedDestinationStation.value = busStationsMap.get(2375041369)
-  //selectedDestinationStation.value.busses = []
+  selectedDestinationStation.value = busStationsMap.get(9275068611)
+  selectedDestinationStation.value.busses = []
+
+  await loadDirectPathFinder(selectedStartStation.value.i, async (data) => {
+    let targetFound = false
+    data.forEach((stationInfo) => {
+      if (busStationsMap.has(stationInfo.t)) {
+        const station = busStationsMap.get(stationInfo.t)
+        if (station.i === selectedDestinationStation.value.i) {
+          console.log(`direct ${selectedStartStation.value.n} to ${station.n} ${stationInfo.d} meters long`)
+          targetFound = true
+          stationInfo.s.forEach((solution) => {
+            console.log('direct solution', solution)
+            solution.s.forEach((stationId) => {
+              if (busStationsMap.has(stationId)) {
+                const sta = busStationsMap.get(stationId)
+                console.log(`direct ${sta.i} ${sta.n}`)
+              } else {
+                console.error("station not found", stationId)
+              }
+            })
+          })
+        }
+      }
+    })
+
+    if (!targetFound) {
+      await loadIndirectPathFinder(selectedStartStation.value.i, (data) => {
+        data.forEach((stationInfo) => {
+          if (busStationsMap.has(stationInfo.t)) {
+            const station = busStationsMap.get(stationInfo.t)
+            if (station.i === selectedDestinationStation.value.i) {
+              console.log(`indirect ${selectedStartStation.value.n} to ${station.n} ${stationInfo.d} meters long`)
+              targetFound = true
+              stationInfo.s.forEach((solution) => {
+                console.log('indirect solution', solution)
+                solution.s.forEach((stationId) => {
+                  if (busStationsMap.has(stationId)) {
+                    const sta = busStationsMap.get(stationId)
+                    console.log(`indirect ${sta.i} ${sta.n}`)
+                  } else {
+                    console.error("station not found", stationId)
+                  }
+                })
+              })
+            }
+          }
+        })
+
+        if (!targetFound) {
+          toast.add({
+            severity: 'error',
+            summary: 'Route not found',
+            detail: `${selectedStartStation.value.n} to ${selectedDestinationStation.value.n} is not possible`,
+            life: 3000
+          })
+        }
+      }, () => {
+        toast.add({severity: 'error', summary: 'Error loading indirect pathfinding', life: 3000})
+        loadingInProgress.value = false
+      })
+    }
+
+  }, () => {
+    toast.add({severity: 'error', summary: 'Error loading pathfinding', life: 3000})
+    loadingInProgress.value = false
+  })
 })
 
 const getUpperDrawerVisible = computed({
@@ -329,7 +281,6 @@ const getUpperDrawerVisible = computed({
     }
   }
 })
-
 
 const getLowerDrawerVisible = computed({
   get() {
@@ -355,7 +306,6 @@ const adjustUpperDrawerHeight = () => {
 
 const lowerDrawer = ref(null)
 const adjustLowerDrawerHeight = () => {
-
   nextTick(() => {
     const drawer = lowerDrawer.value
     if (drawer) {

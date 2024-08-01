@@ -10,24 +10,31 @@ const currentTerminal = inject('currentTerminal')
 const toast = inject('toast')
 
 const onChosenTerminal = (event) => {
+  console.log('selected station id in terminal',event.data.i)
   if (busStationsMap.has(event.data.i)) {
-    const selectedStation =busStationsMap.get(event.data.i)
+    const selectedStation = busStationsMap.get(event.data.i)
     if (selectedStartStation.value === null) {
-      selectedStartStation.value =selectedStation
+      selectedStartStation.value = selectedStation
       selectedStartStation.value.busses = []
-    }else if (selectedDestinationStation.value === null) {
+    } else if (selectedDestinationStation.value === null) {
       selectedDestinationStation.value = selectedStation
       selectedDestinationStation.value.busses = []
-    }else{
+    } else {
       toast.add({
         severity: 'error',
         summary: "Terminal chooser has both start and destination stations",
-        detail:`${selectedStartStation.value.n} to ${selectedDestinationStation.value.n} but got ${selectedStation.n}`,
+        detail: `${selectedStartStation.value.n} to ${selectedDestinationStation.value.n} but got ${selectedStation.n}`,
         life: 3000
       })
     }
     terminalChooserVisible.value = false
   } else {
+    toast.add({
+      severity: 'error',
+      summary: "Error finding station",
+      detail: `station id ${event.data}`,
+      life: 3000
+    })
     console.error('station not found?', event.data)
   }
 }
@@ -63,7 +70,3 @@ const onChosenTerminal = (event) => {
     </template>
   </Drawer>
 </template>
-
-<style scoped>
-
-</style>

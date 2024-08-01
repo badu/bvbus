@@ -1,4 +1,4 @@
-export const service = () => {
+export const service = (toast) => {
     const loadStationTimetables = async (stationId, okHandler, errorHandler) => {
         await fetch(`./tt/${stationId}.json`).then((response) => {
             const contentType = response.headers.get("content-type")

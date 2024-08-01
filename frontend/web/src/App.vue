@@ -4,10 +4,11 @@ import {useToast} from "primevue/usetoast"
 import {store} from "@/store/index.js"
 import {service} from "@/service/index.js"
 
-const {loadStationTimetables, loadBusPoints, loadDirectPathFinder,loadIndirectPathFinder} = service()
-const models = store()
+const toast = useToast()
+const {loadStationTimetables, loadBusPoints, loadDirectPathFinder,loadIndirectPathFinder} = service(toast)
+const models = store(toast)
 
-provide('toast', useToast())
+provide('toast', toast)
 provide('loadBusPoints', loadBusPoints)
 provide('loadStationTimetables', loadStationTimetables)
 provide('loadDirectPathFinder', loadDirectPathFinder)

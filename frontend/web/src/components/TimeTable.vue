@@ -2,8 +2,6 @@
 import {inject, onMounted, ref, watch} from "vue";
 
 const selectedStartStation = inject('selectedStartStation')
-const extraTimetable = inject('extraTimetable')
-const currentTimetable = inject('currentTimetable')
 const timetableVisible = inject('timetableVisible')
 const selectedTime = inject('selectedTime')
 const isWeekend = inject('isWeekend')
@@ -19,7 +17,7 @@ const scrollToFirstValid = (currentTab, table) => {
   }
 
   if (currentTab === 'Today') {
-    const firstIndex = currentTimetable.value.findIndex(entry => {
+    const firstIndex = selectedStartStation.value.timetable.findIndex(entry => {
       return entry.future
     })
 
@@ -40,7 +38,7 @@ const scrollToFirstValid = (currentTab, table) => {
   }
 
   const rows = table.$el.querySelectorAll('.p-datatable-selectable-row')
-  if (!rows) {
+  if (!rows || !rows[0]) {
     return
   }
 
@@ -90,7 +88,7 @@ onMounted(() => {
     <template #header>
       <Tag>
         <div class="flex items-center gap-2 px-1" style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;flex-direction: row;">
-          <img src="./../../svgs/bus_stop_shelter.svg" style="height: 30px;width: 30px;"/>
+          <img src="/svgs/bus_stop_shelter.svg" style="height: 30px;width: 30px;"/>
         </div>
       </Tag>
 
@@ -102,7 +100,7 @@ onMounted(() => {
           <Tag
               :rounded="true"
               :value="bus.busNo"
-              :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.bc }"/>
+              :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc }"/>
           {{ bus.f }} - {{ bus.t }}
           </div>
         </template>
@@ -112,7 +110,7 @@ onMounted(() => {
     <template #default>
       <DataTable ref="busTable"
                  v-model:selection="selectedTime"
-                 :value="displayedTab==='Today' ? currentTimetable : extraTimetable"
+                 :value="displayedTab==='Today' ? selectedStartStation.timetable : selectedStartStation.extraTimetable"
                  :selectionMode="displayedTab==='Today' ? 'single' : null"
                  scrollable
                  scrollHeight="flex"
@@ -132,7 +130,7 @@ onMounted(() => {
             <Tag :rounded="true"
                  @click="onBusNumberClicked"
                  :value="slotProps.data.busNo"
-                 :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.bc}"/>
+                 :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.tc}"/>
             <span style="color: #FED053;user-select: none;margin:5%;">{{ slotProps.data.to }}</span>
           </template>
         </Column>

@@ -18,6 +18,7 @@ type DistanceAndMinutes struct {
 	Key           string
 	FromStationID int64
 	ToStationID   int64
+	ForBusID      int64
 	Meters        uint16
 	Minutes       uint16
 }
@@ -34,7 +35,8 @@ func (a ByDistance) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
 type StationsAndDistances struct {
 	Stations  map[int64]*Station
-	Distances []DistanceAndMinutes
+	Distances map[string]*DistanceAndMinutes
+	Busses    map[int64]*Busline
 }
 
 func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDistances, error) {
@@ -69,6 +71,15 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 		busses = append(busses, &b)
 	}
 	rows.Close()
+	siblingBusses := make(map[int64]int64)
+	for _, busLine1 := range busses {
+		for _, busLine2 := range busses {
+			if busLine1.Line == busLine2.Line && busLine1.Dir != busLine2.Dir {
+				siblingBusses[busLine1.OSMID] = busLine2.OSMID
+				break
+			}
+		}
+	}
 
 	stations := make([]*Station, 0)
 	stationsMap := make(map[int64]*Station)
@@ -114,7 +125,7 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 		return nil, err
 	}
 
-	var curBus *Busline
+	var currentBus *Busline
 	for rows.Next() {
 		var stationID, busID int64
 		var stationIndex int
@@ -125,8 +136,8 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 			return nil, err
 		}
 
-		if curBus == nil || curBus.OSMID != busID {
-			curBus, has = bussesMap[busID]
+		if currentBus == nil || currentBus.OSMID != busID {
+			currentBus, has = bussesMap[busID]
 			if !has {
 				logger.Error("error current bus not found", "busID", busID)
 				return nil, fmt.Errorf("current bus not found id = %d", busID)
@@ -139,7 +150,7 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 			return nil, fmt.Errorf("current station not found id = %d", stationID)
 		}
 
-		curBus.Stations = append(curBus.Stations, *station)
+		currentBus.Stations = append(currentBus.Stations, *station)
 
 		hasBus := false
 		for _, line := range station.Lines {
@@ -156,7 +167,7 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 				return nil, err
 			}
 
-			lineAndTime := &LineNumberAndTime{BusOSMID: busID, No: curBus.Line, Direction: Direction(curBus.Dir)}
+			lineAndTime := &LineNumberAndTime{BusOSMID: busID, No: currentBus.Line, Direction: Direction(currentBus.Dir)}
 			for trows.Next() {
 				var encTime uint16
 				err := trows.Scan(&encTime)
@@ -196,11 +207,11 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 		return nil, err
 	}
 
-	var prevPoint Node
+	var prevPoint *Node
+	currentBus = nil
+	stationIndex := 0
 	currentDistance := float64(0)
-	prevBusID := int64(-1)
-	calculatedDistances := make(map[int64][]float64)
-	firstStop := true
+	mapResult := make(map[string]*DistanceAndMinutes)
 	for rows.Next() {
 		var pointID, busID, pointIndex int64
 		var isStop bool
@@ -212,137 +223,105 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 
 		point, has := pointsMap[pointID]
 		if !has {
-			logger.Error("error finding point by id", "id", pointID)
+			logger.Error("ERROR finding point by id", "id", pointID)
 			return nil, fmt.Errorf("point not found id = %d", pointID)
 		}
 
-		if prevBusID != busID {
-			calculatedDistances[busID] = make([]float64, 0)
-			currentDistance = 0.0
-			prevBusID = busID
-			firstStop = true
-		}
-
-		if !firstStop {
-			currentDistance += Haversine(prevPoint.Lat, prevPoint.Lon, point.Lat, point.Lon)
-			if isStop {
-				calculatedDistances[busID] = append(calculatedDistances[busID], currentDistance)
-				currentDistance = 0.0
+		// bus changed
+		if currentBus == nil || currentBus.OSMID != busID {
+			currentBus, has = bussesMap[busID]
+			if !has {
+				logger.Error("ERROR current bus not found", "busID", busID)
+				return nil, fmt.Errorf("current bus not found id = %d", busID)
 			}
+			stationIndex = 0
+			currentDistance = 0.0
+			prevPoint = nil
 		}
 
-		firstStop = false
-		prevPoint = point
+		// we can calculate Haversine
+		if prevPoint != nil {
+			currentDistance += Haversine(prevPoint.Lat, prevPoint.Lon, point.Lat, point.Lon)
+		}
+
+		// it's a stop and it's not the first one (storing distance "from"-"to")
+		if isStop && prevPoint != nil {
+			startStationID := currentBus.Stations[stationIndex].OSMID
+			stationIndex++
+			if stationIndex >= len(currentBus.Stations) {
+				logger.Error("ERROR", "", fmt.Sprintf("%s index = %d stations = %d", currentBus.Name, stationIndex, len(currentBus.Stations)))
+				continue
+			}
+			destinationStationID := currentBus.Stations[stationIndex].OSMID
+			key := fmt.Sprintf("%d-%d-%d", startStationID, destinationStationID, busID)
+			startStation, hasStartStation := stationsMap[startStationID]
+			if !hasStartStation {
+				logger.Error("ERROR : start station not found in map", "id", startStationID)
+				continue
+			}
+
+			destinationStation, hasDestinationStation := stationsMap[destinationStationID]
+			if !hasDestinationStation {
+				logger.Error("ERROR : destination station not found in map", "id", destinationStationID)
+				continue
+			}
+
+			startTime, validStartTime := startStation.Lines.GetFirstEntry(busID)
+			if !validStartTime {
+				logger.Error("INVALID START TIME", "", fmt.Sprintf("for %q in %q - has bus ? %t", currentBus.Name, startStation.Name, startStation.Lines.HasBus(busID)))
+				continue
+			}
+
+			endTime, validEndTime := destinationStation.Lines.GetFirstEntryAfter(busID, startTime)
+			if !validEndTime {
+				siblingBusID, hasSibling := siblingBusses[busID]
+				if !hasSibling {
+					logger.Error("NO SIBLING FOUND", "busID", busID)
+					continue
+				}
+				siblingBus, hasSiblingBus := bussesMap[siblingBusID]
+				if !hasSiblingBus {
+					logger.Error("SIBLING BUS NOT FOUND", "busID", siblingBusID)
+					continue
+				}
+				destinationStationID = siblingBus.Stations[0].OSMID
+
+				siblingDestinationStation, destFound := stationsMap[destinationStationID]
+				if !destFound {
+					logger.Error("ERROR finding timetable by id while healing", "destStationID", destinationStationID)
+					continue
+				}
+
+				endTime, validEndTime = siblingDestinationStation.Lines.GetFirstEntryAfter(siblingBus.OSMID, startTime)
+				if !validEndTime {
+					logger.Error("INVALID END TIME", "endStationID", destinationStationID)
+					continue
+				}
+			}
+
+			if !startTime.After(*endTime) {
+				logger.Error("TIME AFTER", "bus", currentBus.Name, "start", startStation.Name, "end", destinationStation.Name, "startTime", startTime, "endTime", endTime)
+				continue
+			}
+
+			diff := startTime.Diff(*endTime)
+
+			mapResult[key] = &DistanceAndMinutes{
+				Key:           key,
+				FromStationID: startStation.OSMID,
+				ToStationID:   destinationStation.OSMID,
+				ForBusID:      busID,
+				Meters:        uint16(currentDistance),
+				Minutes:       diff,
+			}
+			currentDistance = 0.0
+		}
+
+		prevPoint = &point
 	}
 	rows.Close()
 
-	mapResult := make(map[string]*DistanceAndMinutes)
-	seen := make(map[string]struct{})
-	for busID, distances := range calculatedDistances {
-		bus, has := bussesMap[busID]
-		if !has {
-			logger.Error("error finding bus by id", "busID", busID)
-			continue
-		}
-
-		if len(distances)+1 != len(bus.Stations) {
-			var sb strings.Builder
-			for index := range distances {
-				startStation := bus.Stations[index]
-				if index < len(bus.Stations)-1 {
-					destinationStation := bus.Stations[index+1]
-					sb.WriteString(fmt.Sprintf("[%d] %q -> %q ", index, startStation.Name, destinationStation.Name))
-				} else {
-					sb.WriteString(fmt.Sprintf("[%d] %q -> [?] ", index, startStation.Name))
-				}
-			}
-			sb.WriteRune('\n')
-			for index, station := range bus.Stations {
-				sb.WriteString(fmt.Sprintf("[%d] %q ->", index, station.Name))
-			}
-			sb.WriteRune('\n')
-			logger.Error("stations not equal distances", "distances", len(distances), "stations", len(bus.Stations), "busID", busID, "no", bus.Line, "comparison", sb.String())
-			continue
-		}
-
-		for index, distance := range distances {
-			if len(bus.Stations)-1 == index+1 {
-				continue // won't have destTimetable timetable
-			}
-
-			startStation := bus.Stations[index]
-			destinationStation := bus.Stations[index+1]
-			key := fmt.Sprintf("%d-%d", startStation.OSMID, destinationStation.OSMID)
-
-			if _, hasSeen := seen[key]; hasSeen {
-				continue
-			}
-			seen[key] = struct{}{}
-
-			if value, hasResult := mapResult[key]; !hasResult {
-				startTimetable, startFound := stationsMap[startStation.OSMID]
-				if !startFound {
-					logger.Error("error finding timetable by id", "startStationID", startStation.OSMID)
-					continue
-				}
-
-				validStartTime := false
-				var startTime Time
-				for _, line := range startTimetable.Lines {
-					if line.BusOSMID == busID {
-						if len(line.Times) > 0 {
-							startTime.Decompress(line.Times[0])
-							validStartTime = true
-						}
-						break
-					}
-				}
-
-				destTimetable, destFound := stationsMap[destinationStation.OSMID]
-				if !destFound {
-					logger.Error("error finding timetable by id", "destStationID", destinationStation.OSMID)
-					continue
-				}
-
-				validEndTime := false
-				var endTime Time
-				for _, line := range destTimetable.Lines {
-					if line.BusOSMID == busID {
-						if len(line.Times) > 0 {
-							endTime.Decompress(line.Times[0])
-							validEndTime = true
-						}
-						break
-					}
-				}
-
-				if !startTime.After(endTime) {
-					logger.Error("TIME AFTER", "bus", bus.Name, "start", startStation.Name, "end", destinationStation.Name, "startTime", startTime, "endTime", endTime)
-					continue
-				}
-
-				if !validEndTime || !validStartTime {
-					logger.Error("INVALID START OR END TIME", "bus", bus.Name, "start", startStation.Name, "end", destinationStation.Name)
-					continue
-				}
-
-				diff := startTime.Diff(endTime)
-				mapResult[key] = &DistanceAndMinutes{Meters: uint16(distance), Minutes: diff, FromStationID: startStation.OSMID, ToStationID: destinationStation.OSMID}
-			} else if value.Meters < uint16(distance) {
-				mapResult[key].Meters = uint16(distance)
-			}
-		}
-	}
-
-	result := make([]DistanceAndMinutes, 0)
-	for key, measurement := range mapResult {
-		r := *measurement
-		r.Key = key
-		result = append(result, r)
-	}
-	sort.Sort(ByDistance(result))
-
-	return &StationsAndDistances{Stations: stationsMap, Distances: result}, nil
+	return &StationsAndDistances{Stations: stationsMap, Distances: mapResult, Busses: bussesMap}, nil
 }
 
 func TestGenerateDistancesAndTimesBetweenStations(t *testing.T) {
@@ -362,13 +341,27 @@ func TestGenerateDistancesAndTimesBetweenStations(t *testing.T) {
 	var sb strings.Builder
 	sb.WriteString("const distances = {\n")
 	comma := false
+	seen := make(map[string]struct{})
+
+	sortedResult := make([]DistanceAndMinutes, 0)
 	for _, measurement := range result.Distances {
-		if comma {
-			sb.WriteRune(',')
-		} else {
-			comma = true
+		r := *measurement
+		sortedResult = append(sortedResult, r)
+	}
+
+	sort.Sort(ByDistance(sortedResult))
+
+	for _, measurement := range sortedResult {
+		key := fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)
+		if _, has := seen[key]; !has {
+			if comma {
+				sb.WriteRune(',')
+			} else {
+				comma = true
+			}
+			sb.WriteString(fmt.Sprintf("%q:{%q:%d,%q:%d}", key, "d", measurement.Meters, "m", measurement.Minutes))
 		}
-		sb.WriteString(fmt.Sprintf("%q:{%q:%d,%q:%d}", measurement.Key, "d", measurement.Meters, "m", measurement.Minutes))
+		seen[key] = struct{}{}
 	}
 	sb.WriteString("};\nexport default distances;")
 
@@ -379,6 +372,8 @@ func TestGenerateDistancesAndTimesBetweenStations(t *testing.T) {
 }
 
 func TestPathFinderWithNum(t *testing.T) {
+	const writeToDisk = true
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
@@ -394,7 +389,6 @@ func TestPathFinderWithNum(t *testing.T) {
 
 	uniqueStationNames := make(map[string][]int64)
 	graph := simple.NewWeightedDirectedGraph(0, math.Inf(1))
-	crossingsGraph := simple.NewWeightedDirectedGraph(0, math.Inf(1))
 	for stationID, station := range result.Stations {
 		if station.IsOutsideCity {
 			continue
@@ -406,10 +400,22 @@ func TestPathFinderWithNum(t *testing.T) {
 		uniqueStationNames[station.Name] = append(uniqueStationNames[station.Name], stationID)
 
 		graph.AddNode(station)
-		crossingsGraph.AddNode(station)
 	}
 
+	seen := make(map[string]struct{})
 	for _, measurement := range result.Distances {
+		if graph.HasEdgeFromTo(measurement.FromStationID, measurement.ToStationID) {
+			continue
+		}
+
+		if len(measurement.Key) == 0 {
+			logger.Error("ERROR EMPTY KEY")
+		}
+
+		if _, has := seen[measurement.Key]; has {
+			logger.Error("ERROR HAS SEEN", "key", measurement.Key)
+		}
+
 		startStation, startFound := result.Stations[measurement.FromStationID]
 		if !startFound {
 			t.Fatalf("error finding start station %d", measurement.FromStationID)
@@ -421,17 +427,26 @@ func TestPathFinderWithNum(t *testing.T) {
 		}
 
 		graph.SetWeightedEdge(simple.WeightedEdge{F: startStation, T: endStation, W: float64(measurement.Meters)})
-		crossingsGraph.SetWeightedEdge(simple.WeightedEdge{F: startStation, T: endStation, W: float64(measurement.Meters)})
+		seen[measurement.Key] = struct{}{}
 	}
 
-	// add edges for stations with the same name (crossings)
-	for _, stationsIDs := range uniqueStationNames {
-		for i := 0; i < len(stationsIDs); i++ {
-			sourceStation, _ := result.Stations[stationsIDs[i]]
-			for j := 0; j < len(stationsIDs); j++ {
-				if i != j {
-					targetStation, _ := result.Stations[stationsIDs[j]]
-					crossingsGraph.SetWeightedEdge(simple.WeightedEdge{F: sourceStation, T: targetStation, W: 100})
+	for _, bus := range result.Busses {
+		if bus.IsMetropolitan {
+			continue
+		}
+		for index := range bus.Stations {
+			if index >= len(bus.Stations)-1 {
+				continue
+			}
+			startStation := bus.Stations[index]
+			destinationStation := bus.Stations[index+1]
+			if !graph.HasEdgeFromTo(startStation.OSMID, destinationStation.OSMID) {
+				key := fmt.Sprintf("%d-%d-%d", startStation.OSMID, destinationStation.OSMID, bus.OSMID)
+
+				if _, has := result.Distances[key]; has {
+					logger.Error("ERROR NOT ADDED EDGE BETWEEN", "from", startStation.Name, "to", destinationStation.Name, "bus", bus.Line)
+				} else {
+					logger.Error("ERROR MISSING EDGE BETWEEN", "from", startStation.Name, "to", destinationStation.Name, "bus", bus.Line)
 				}
 			}
 		}
@@ -447,7 +462,7 @@ func TestPathFinderWithNum(t *testing.T) {
 			continue
 		}
 		_ = station
-		// logger.Info("NODE", "named", station.Name)
+		// logger.Info("NODE", "named", station.Name, "lat", station.Lat, "lon", station.Lon)
 	}
 
 	pairs := make(map[string]struct{})
@@ -523,6 +538,7 @@ func TestPathFinderWithNum(t *testing.T) {
 			}
 
 			allPaths, weight := solutions.AllTo(endStationID)
+
 			if len(allPaths) == 0 {
 				if _, has := noSolutions[startStationID]; !has {
 					noSolutions[startStationID] = make([]int64, 0)
@@ -557,8 +573,8 @@ func TestPathFinderWithNum(t *testing.T) {
 
 				sb.WriteString(fmt.Sprintf("{%q:%d,%q:[", "i", i+1, "s"))
 
-				for start := len(solution) - 1; start > 0; start-- {
-					if start < len(solution)-1 {
+				for start := 1; start < len(solution)-1; start++ {
+					if start > 1 {
 						sb.WriteRune(',')
 					}
 
@@ -580,19 +596,39 @@ func TestPathFinderWithNum(t *testing.T) {
 		}
 		sb.WriteRune(']')
 
-		err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pf/%d.json", startStationID), []byte(sb.String()), 0644)
-		if err != nil {
-			t.Fatalf("error writing urban_busses.js : %#v", err)
+		if writeToDisk {
+			err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pf/%d.json", startStationID), []byte(sb.String()), 0644)
+			if err != nil {
+				t.Fatalf("error writing urban_busses.js : %#v", err)
+			}
 		}
 
 		count--
-		t.Logf("%d written, %d remaining", startStationID, count)
+		// t.Logf("%d written, %d remaining", startStationID, count)
+	}
+
+	// add edges for stations with the same name (crossings)
+	for _, stationsIDs := range uniqueStationNames {
+		for i := 0; i < len(stationsIDs); i++ {
+
+			sourceStation, _ := result.Stations[stationsIDs[i]]
+			for j := 0; j < len(stationsIDs); j++ {
+				if graph.HasEdgeFromTo(stationsIDs[i], stationsIDs[j]) {
+					continue
+				}
+				if i != j {
+					targetStation, _ := result.Stations[stationsIDs[j]]
+					// logger.Info("adding 100m edge between", "from", sourceStation.Name, "to", targetStation.Name, "fid", sourceStation.OSMID, "tid", targetStation.OSMID)
+					graph.SetWeightedEdge(simple.WeightedEdge{F: sourceStation, T: targetStation, W: 100})
+				}
+			}
+		}
 	}
 
 	count = len(noSolutions)
 	for startStationID, endStationIDs := range noSolutions {
 		startNode, _ := result.Stations[startStationID]
-		solutions, ok := path.BellmanFordAllFrom(startNode, crossingsGraph)
+		solutions, ok := path.BellmanFordAllFrom(startNode, graph)
 		if !ok {
 			t.Fatalf("error finding all solutions")
 		}
@@ -627,8 +663,8 @@ func TestPathFinderWithNum(t *testing.T) {
 
 				sb.WriteString(fmt.Sprintf("{%q:%d,%q:[", "i", i+1, "s"))
 
-				for start := len(solution) - 1; start > 0; start-- {
-					if start < len(solution)-1 {
+				for start := 1; start < len(solution)-1; start++ {
+					if start > 1 {
 						sb.WriteRune(',')
 					}
 
@@ -646,14 +682,14 @@ func TestPathFinderWithNum(t *testing.T) {
 		sb.WriteRune(']')
 
 		count--
-		if wroteOne {
+		if wroteOne && writeToDisk {
 			err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pf/%d-cross.json", startStationID), []byte(sb.String()), 0644)
 			if err != nil {
 				t.Fatalf("error writing urban_busses.js : %#v", err)
 			}
-			t.Logf("%d written %d, %d remaining", startStationID, len(endStationIDs), count)
+			// t.Logf("%d written %d, %d remaining", startStationID, len(endStationIDs), count)
 		} else {
-			t.Logf("%d NOT written (has no solution)", startStationID)
+			// t.Logf("%d NOT written (has no solution)", startStationID)
 		}
 	}
 	noSolutions = nil

@@ -115,7 +115,7 @@ const trajectoryStyle = new FlowLine({
   color2: '#FED053',
   width: 6,
   width2: 6,
-  arrow: -1,
+  arrow: 1,
 })
 const trajectorySource = new VectorSource()
 const trajectoryLayer = new VectorImage({
@@ -146,6 +146,7 @@ const flashMarker = (map, marker) => {
     if (elapsed >= duration) {
       unByKey(listenerKey)
       clusterLayer.un('postrender', animate)
+      console.log('selected station id', marker.getId())
       emit('selectStation', {featureId: marker.getId()})
       return
     }
@@ -232,6 +233,7 @@ onMounted(async () => {
             if (feature.get('isTerminal')) {
               for (let i = 0; i < terminals.length; i++) {
                 if (terminals[i].i === feature.getId()) {
+                  console.log('selected terminal id', terminals[i].i)
                   emit('terminalChooser', {terminal: terminals[i]})
                   break
                 }
