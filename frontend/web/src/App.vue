@@ -4,16 +4,17 @@ import {useToast} from "primevue/usetoast"
 import {store} from "@/store/index.js"
 import {service} from "@/service/index.js"
 
-const {loadStationTimetables, loadBusTimetables} = service()
+const {loadStationTimetables, loadBusPoints, loadDirectPathFinder,loadIndirectPathFinder} = service()
 const models = store()
 
 provide('toast', useToast())
-provide('loadBusTimetables', loadBusTimetables)
+provide('loadBusPoints', loadBusPoints)
 provide('loadStationTimetables', loadStationTimetables)
+provide('loadDirectPathFinder', loadDirectPathFinder)
+provide('loadIndirectPathFinder', loadIndirectPathFinder)
 for (const key in models) {
   provide(key, models[key])
 }
-provide('selectedStations', ref([]))
 
 const getScreenInfo = () => {
   const screenWidth = window.innerWidth

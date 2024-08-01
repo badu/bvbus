@@ -65,7 +65,7 @@ export const store = () => {
                     const bus = metroBusLinesMap.get(busId)
                     const index = metro_stations[i].busses.indexOf({i: bus.i, n: bus.n, c: bus.c})
                     if (index < 0) {
-                        metro_stations[i].busses.push({i: bus.i, n: bus.n, c: bus.c})
+                        metro_stations[i].busses.push({i: bus.i, n: bus.n, c: bus.c, f: bus.f, t: bus.t})
                     }
                 } else {
                     console.error('metroBusLinesMap is missing', busId)
@@ -111,7 +111,7 @@ export const store = () => {
                     const bus = busLinesMap.get(busId)
                     const index = urban_stations[i].busses.indexOf({i: bus.i, n: bus.n, c: bus.c})
                     if (index < 0) {
-                        urban_stations[i].busses.push({i: bus.i, n: bus.n, c: bus.c})
+                        urban_stations[i].busses.push({i: bus.i, n: bus.n, c: bus.c, f: bus.f, t: bus.t})
                     }
                 } else {
                     console.error('busLinesMap is missing', busId)

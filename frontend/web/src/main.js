@@ -18,22 +18,22 @@ import Column from "primevue/column"
 import Drawer from "primevue/drawer"
 import Dialog from "primevue/dialog"
 import router from './router'
-import Tabs from 'primevue/tabs'
-import Tab from 'primevue/tab'
-import TabList from 'primevue/tablist'
 import Timeline from 'primevue/timeline'
-import Carousel from 'primevue/carousel'
+import SelectButton from 'primevue/selectbutton'
+import ToggleButton from 'primevue/togglebutton'
 
 import 'primeicons/primeicons.css'
 
 import App from './App.vue'
 import Map from "@/components/Map.vue"
 import BusLine from "@/components/BusLine.vue"
-import Busses from "@/components/Busses.vue";
-import MetroBusses from "@/components/MetroBusses.vue";
+import Busses from "@/components/Busses.vue"
+import MetroBusses from "@/components/MetroBusses.vue"
 import TimeTable from "@/components/TimeTable.vue"
-import TerminalChooser from "@/components/TerminalChooser.vue";
-import {$dt, definePreset} from "@primevue/themes";
+import Marquee from "@/components/Marquee.vue"
+import TerminalChooser from "@/components/TerminalChooser.vue"
+
+import {definePreset} from "@primevue/themes";
 
 const MyPreset = definePreset(Lara, {
     semantic: {
@@ -56,10 +56,6 @@ const MyPreset = definePreset(Lara, {
         }
     }
 })
-
-const primaryColor = $dt('primary.color')
-console.log('primaryColor', primaryColor, $dt('blue.500').value)
-primaryColor.value = '#1E232B'
 
 const app = createApp(App)
 app.use(router)
@@ -92,11 +88,9 @@ app.component('DataTable', DataTable)
 app.component('Column', Column)
 app.component('Drawer', Drawer)
 app.component('Dialog', Dialog)
-app.component('Tabs', Tabs)
-app.component('Tab', Tab)
-app.component('TabList', TabList)
 app.component('Timeline', Timeline)
-app.component('Carousel', Carousel)
+app.component('SelectButton', SelectButton)
+app.component('ToggleButton', ToggleButton)
 
 app.component('Map', Map)
 app.component('TimeTable', TimeTable)
@@ -104,5 +98,6 @@ app.component('Busses', Busses)
 app.component('MetroBusses', MetroBusses)
 app.component('BusLine', BusLine)
 app.component('TerminalChooser', TerminalChooser)
+app.component('Marquee', Marquee)
 
 app.mount('#app')

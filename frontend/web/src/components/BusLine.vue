@@ -1,5 +1,5 @@
 <script setup>
-import {inject, ref, watch} from "vue";
+import {computed, inject, ref, watch} from "vue";
 
 const busLinesMap = inject('busLinesMap')
 const busStationsMap = inject('busStationsMap')
@@ -14,7 +14,7 @@ const selectedStartStation = inject('selectedStartStation')
 
 watch(selectedBusLine, (newSelectedBusLine) => {
   const newStations = []
-  if (newSelectedBusLine.m){
+  if (newSelectedBusLine.m) {
     newSelectedBusLine.s.forEach((stationId) => {
       if (metroBusStationsMap.has(stationId)) {
         const station = {...metroBusStationsMap.get(stationId)}
@@ -34,7 +34,7 @@ watch(selectedBusLine, (newSelectedBusLine) => {
         newStations.push(station)
       }
     })
-  }else {
+  } else {
     newSelectedBusLine.s.forEach((stationId) => {
       if (busStationsMap.has(stationId)) {
         const station = {...busStationsMap.get(stationId)}
@@ -66,44 +66,20 @@ const onBusNumberClicked = (event, data) => {
 
 const onStationClicked = (event, data) => {
   event.stopImmediatePropagation()
-  if (selectedBusLine.value.m){
+  if (selectedBusLine.value.m) {
     if (metroBusStationsMap.has(data.i)) {
       selectedStartStation.value = metroBusStationsMap.get(data.i)
     } else {
-      console.log('error finding station', data.i)
+      console.error('error finding station', data.i)
     }
-  }else {
+  } else {
     if (busStationsMap.has(data.i)) {
       selectedStartStation.value = busStationsMap.get(data.i)
     } else {
-      console.log('error finding station', data.i)
+      console.error('error finding station', data.i)
     }
   }
 }
-
-const responsiveOptions = ref([
-  {
-    breakpoint: '1400px',
-    numVisible: 3,
-    numScroll: 1
-  },
-  {
-    breakpoint: '1199px',
-    numVisible: 3,
-    numScroll: 1
-  },
-  {
-    breakpoint: '767px',
-    numVisible: 2,
-    numScroll: 1
-  },
-  {
-    breakpoint: '575px',
-    numVisible: 1,
-    numScroll: 1
-  }
-])
-
 </script>
 
 <template>
@@ -114,12 +90,17 @@ const responsiveOptions = ref([
       style="background-color: #1E232B">
 
     <template #header>
-      <Tag
-          :rounded="true"
-          :value="selectedBusLine.n"
-          :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: selectedBusLine.c,color:selectedBusLine.bc}"/>
-      <h2 style="color: #FED053;user-select: none;"> {{ selectedBusLine.b }} (Urban)</h2>
+      <div style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;">
+        <Tag>
+          <img src="./../../svgs/bus.svg" style="height: 30px;width: 30px;"/>
+        </Tag>
+        <Tag
+            :rounded="true"
+            :value="selectedBusLine.n"
+            :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: selectedBusLine.c,color:selectedBusLine.bc}"/>
 
+        <h2 style="color: #FED053;user-select: none;">{{ selectedBusLine.b }}</h2>
+      </div>
     </template>
 
     <Timeline :value="stations" align="alternate">
@@ -129,22 +110,18 @@ const responsiveOptions = ref([
       </template>
 
       <template #opposite="slotProps">
-        <Carousel :value="slotProps.item.otherBusses"
-                  :responsiveOptions="responsiveOptions"
-                  :numVisible="3"
-                  :numScroll="1"
-                  circular
-                  :autoplayInterval="3000"
-                  :showIndicators="false"
-                  :showNavigators="false">
-          <template #item="slotProps">
-            <Tag
-                :style="{ minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c, color:slotProps.data.bc }"
-                @click="onBusNumberClicked($event,slotProps.data)"
-                :rounded="true"
-                :value="slotProps.data.n"/>
+        <Marquee :id="'lineLinksInStation' + slotProps.item.i">
+          <template v-for="bus in slotProps.item.otherBusses">
+            <div style="white-space: nowrap;text-align: center;vertical-align: center">
+              {{ slotProps.item.index }}
+              <Tag
+                  :rounded="true"
+                  :value="bus.n"
+                  :style="{minWidth: '40px', maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.bc}"/>
+              {{ bus.f }} - {{ bus.t }}
+            </div>
           </template>
-        </Carousel>
+        </Marquee>
 
       </template>
     </Timeline>

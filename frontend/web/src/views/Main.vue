@@ -1,5 +1,5 @@
 <script setup>
-import {inject, onMounted, ref, watch} from "vue";
+import {computed, inject, onMounted, ref, watch, nextTick} from "vue";
 import TimeTable from "@/components/TimeTable.vue";
 import Busses from "@/components/Busses.vue";
 import TerminalChooser from "@/components/TerminalChooser.vue";
@@ -11,8 +11,11 @@ const isWeekend = inject('isWeekend')
 const decompressDateTime = inject('decompressDateTime')
 const naturalSortBussesNo = inject('naturalSortBussesNo')
 const selectedStartStation = inject('selectedStartStation')
+const selectedDestinationStation = inject('selectedDestinationStation')
 const loadStationTimetables = inject('loadStationTimetables')
-const selectedStations = inject('selectedStations')
+const loadDirectPathFinder = inject('loadDirectPathFinder')
+const loadIndirectPathFinder = inject('loadIndirectPathFinder')
+const loadBusPoints = inject('loadBusPoints')
 const extraTimetable = inject('extraTimetable')
 const currentTimetable = inject('currentTimetable')
 const timetableVisible = inject('timetableVisible')
@@ -26,7 +29,8 @@ const pathfinderMode = inject('pathfinderMode')
 const terminalChooserVisible = inject('terminalChooserVisible')
 const terminalsList = inject('terminalsList')
 const currentTerminal = inject('currentTerminal')
-const metroBusLinesMap= inject('metroBusLinesMap')
+const metroBusLinesMap = inject('metroBusLinesMap')
+const brasovMap = ref(null)
 
 watch(selectedBusLine, (newSelectedBusLine) => {
   bussesListVisible.value = false
@@ -83,15 +87,24 @@ const items = ref([
     }
   },
   {
-    label: 'Path Finder',
-    icon: 'pi pi-directions',
-    command: () => {
+    label: 'Settings',
+    icon: 'pi pi-cog',
+    command: async () => {
+      const bus = busLinesMap.get(5390264)
+      await loadBusPoints(
+          5390264,
+          (data) => {
+            brasovMap.value.displayTrajectory(data, bus.c)
+          },
+          () => {
+            console.error('error loading bus points')
+          })
+
       toast.add({
         severity: 'error',
-        summary: "Path finder not implemented",
+        summary: "Settings are not yet implemented",
         life: 3000
       })
-      pathfinderMode.value = true
     }
   }
 ])
@@ -101,19 +114,28 @@ const loadTimetablesForStation = async () => {
   const minutes = now.getHours() * 60 + now.getMinutes()
   loadingInProgress.value = true
 
-
   await loadStationTimetables(selectedStartStation.value.i, (data) => {
     const newTimes = []
     const extraTimes = []
     const busNoMap = new Map()
     data.forEach((busData) => {
-      if (selectedStartStation.value.o){
+      if (selectedStartStation.value.o) {
         // metropolitan
         if (metroBusLinesMap.has(busData.b)) {
           const busLine = metroBusLinesMap.get(busData.b)
           if (!busNoMap.has(busLine.n)) {
             busNoMap.set(busLine.n, true)
-            selectedStartStation.value.busses.push({busNo: busLine.n, c: busLine.c, bc: busLine.bc})
+            const busData = {
+              busNo: busLine.n,
+              c: busLine.c,
+              bc: busLine.bc,
+              f: busLine.f,
+              t: busLine.t
+            }
+            const index = selectedStartStation.value.busses.indexOf(busData)
+            if (index < 0) {
+              selectedStartStation.value.busses.push(busData)
+            }
           }
 
           busData.t.forEach((time) => {
@@ -148,13 +170,23 @@ const loadTimetablesForStation = async () => {
 
           })
         }
-      }else{
+      } else {
         // urban
         if (busLinesMap.has(busData.b)) {
           const busLine = busLinesMap.get(busData.b)
           if (!busNoMap.has(busLine.n)) {
             busNoMap.set(busLine.n, true)
-            selectedStartStation.value.busses.push({busNo: busLine.n, c: busLine.c, bc: busLine.bc})
+            const busData = {
+              busNo: busLine.n,
+              c: busLine.c,
+              bc: busLine.bc,
+              f: busLine.f,
+              t: busLine.t
+            }
+            const index = selectedStartStation.value.busses.indexOf(busData)
+            if (index < 0) {
+              selectedStartStation.value.busses.push(busData)
+            }
           }
 
           busData.t.forEach((time) => {
@@ -192,7 +224,6 @@ const loadTimetablesForStation = async () => {
       }
 
 
-
       newTimes.sort((a, b) => a.encTime - b.encTime)
       extraTimes.sort((a, b) => a.encTime - b.encTime)
 
@@ -211,28 +242,58 @@ const loadTimetablesForStation = async () => {
   })
 }
 
-const onSelectStation = (event) => {
-  selectedStations.value.push(event.featureId)
+const onSelectStation = async (event) => {
+  if (selectedStartStation.value === null) {
+    if (busStationsMap.has(event.featureId)) {
+      selectedStartStation.value = busStationsMap.get(event.featureId)
+      selectedStartStation.value.busses = []
+    } else {
+      console.error(`error finding bus station ${event.featureId} in map`)
+    }
+  } else if (selectedDestinationStation.value === null) {
+    if (busStationsMap.has(event.featureId)) {
+      selectedDestinationStation.value = busStationsMap.get(event.featureId)
+      selectedDestinationStation.value.busses = []
+    } else {
+      console.error(`error finding bus station ${event.featureId} in map`)
+    }
+    pathfinderMode.value = true
+    loadingInProgress.value = false
+    await loadDirectPathFinder(selectedStartStation.value.i, (data) => {
+      console.log('loadDirectPathFinder', data)
+    }, () => {
+      toast.add({severity: 'error', summary: 'Error loading pathfinding', life: 3000})
+      loadingInProgress.value = false
+    })
 
-  if (busStationsMap.has(event.featureId)) {
-    selectedStartStation.value = busStationsMap.get(event.featureId)
-    selectedStartStation.value.busses = []
   } else {
-    console.error(`error finding bus station ${event.featureId} in map`)
+    if (busStationsMap.has(event.featureId)) {
+      selectedStartStation.value = busStationsMap.get(event.featureId)
+      selectedStartStation.value.busses = []
+      selectedDestinationStation.value = null
+    } else {
+      console.error(`error finding bus station ${event.featureId} in map`)
+    }
   }
 }
 
 watch(selectedStartStation, (newSelectedStartStation) => {
+  if (!newSelectedStartStation) {
+    return
+  }
   newSelectedStartStation.busses = []
   setTimeout(loadTimetablesForStation, 500)
 })
 
-const onDeselectStation = (event) => {
-  console.log('removing', event.featureId)
-  const selIndex = selectedStations.value.indexOf(event.featureId)
-  if (selIndex >= 0) {
-    selectedStations.value.splice(selIndex, 1)
+const onDeselectStartStation = (event) => {
+  selectedStartStation.value = null
+  if (selectedDestinationStation.value) {
+    selectedDestinationStation.value = null
   }
+}
+
+const onDeselectEndStation = (event) => {
+  selectedDestinationStation.value = null
 }
 
 const onTerminalChooser = (event) => {
@@ -245,37 +306,123 @@ const onTerminalChooser = (event) => {
   terminalChooserVisible.value = true
 }
 
-
 onMounted(() => {
   //onSelectStation({featureId: 3713443720})
   //selectedBusLine.value = busLinesMap.get(5417775)
   //buslineVisible.value = true
+
+  //selectedStartStation.value = busStationsMap.get(272095075)
+  //selectedStartStation.value.busses = []
+
+  //selectedDestinationStation.value = busStationsMap.get(2375041369)
+  //selectedDestinationStation.value.busses = []
 })
+
+const getUpperDrawerVisible = computed({
+  get() {
+    return selectedStartStation.value !== null
+  },
+  set(newValue) {
+    if (!newValue) {
+      selectedStartStation.value = null
+      return
+    }
+  }
+})
+
+
+const getLowerDrawerVisible = computed({
+  get() {
+    return selectedDestinationStation.value !== null
+  },
+  set(newValue) {
+    if (!newValue) {
+      selectedDestinationStation.value = null
+      return
+    }
+  }
+})
+
+const upperDrawer = ref(null)
+const adjustUpperDrawerHeight = () => {
+  nextTick(() => {
+    const drawer = upperDrawer.value
+    if (drawer) {
+      drawer.mask.style.height = `${drawer.container.offsetHeight}px`
+    }
+  })
+}
+
+const lowerDrawer = ref(null)
+const adjustLowerDrawerHeight = () => {
+
+  nextTick(() => {
+    const drawer = lowerDrawer.value
+    if (drawer) {
+      drawer.mask.style.height = `${drawer.container.offsetHeight}px`
+      drawer.mask.style.top = null
+      drawer.mask.style.bottom = `0`
+    }
+  })
+}
 </script>
 
 <template>
   <div class="parent items-center">
     <div class="parent">
-      <Map class="child"
+
+      <Map ref="brasovMap"
+           class="child"
            @selectStation="onSelectStation"
-           @deselectStation="onDeselectStation"
+           @deselectStartStation="onDeselectStartStation"
+           @deselectEndStation="onDeselectEndStation"
            @terminalChooser="onTerminalChooser"/>
+
       <div style="position: relative; bottom: 10%; right:10%">
         <SpeedDial :model="items"
-                   :radius="180"
+                   :radius="240"
                    type="quarter-circle"
                    direction="up-left"
-                   :pt="{ pcbutton:{root:{class:'my-speeddial-button'}}}"
                    :style="{ position: 'absolute', right: 0, bottom: 0 }"/>
       </div>
     </div>
 
     <router-view></router-view>
 
+    <Drawer
+        ref="upperDrawer"
+        v-model:visible="getUpperDrawerVisible"
+        position="top"
+        :modal="false"
+        :showCloseIcon="true"
+        :dismissable="false"
+        @show="adjustUpperDrawerHeight">
+      <template #header>
+        Start : {{ selectedStartStation.n }}
+      </template>
+    </Drawer>
+
+    <Drawer
+        ref="lowerDrawer"
+        v-model:visible="getLowerDrawerVisible"
+        position="bottom"
+        :showCloseIcon="true"
+        :modal="false"
+        :dismissable="false"
+        @show="adjustLowerDrawerHeight">
+      <template #header>
+        Destination : {{ selectedDestinationStation.n }}
+      </template>
+    </Drawer>
+
     <TimeTable/>
+
     <BusLine/>
+
     <Busses/>
+
     <MetroBusses/>
+
     <TerminalChooser/>
   </div>
 

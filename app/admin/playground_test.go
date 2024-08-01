@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1336,4 +1337,69 @@ func TestGenerateTerminalsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error writing urban_busses.js : %#v", err)
 	}
+}
+
+func TestGenerateBusPoints(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
+	if err != nil {
+		t.Fatalf("Error opening SQLite database: %v", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT point_id, bus_id, point_index, is_stop, street_points.lat as lat, street_points.lng, busses.no AS lng FROM street_rels INNER JOIN street_points ON street_points.id = street_rels.point_id INNER JOIN busses on busses.id = street_rels.bus_id ORDER BY bus_id,point_index;`)
+	if err != nil {
+		logger.Error("error querying street relations", "err", err)
+		t.Fatalf("error querying street relations: %#v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteRune('[')
+	count := 0
+	prevBusID := int64(-1)
+	prevBusNo := ""
+	for rows.Next() {
+		var pointID, busID, pointIndex int64
+		var lat, lng float64
+		var busNo string
+		var isStop bool
+		err := rows.Scan(&pointID, &busID, &pointIndex, &isStop, &lat, &lng, &busNo)
+		if err != nil {
+			logger.Error("error scanning", "err", err)
+			t.Fatalf("error scanning street relations: %#v", err)
+		}
+
+		if prevBusID < 0 {
+			prevBusNo = busNo
+			prevBusID = busID
+		}
+
+		if prevBusID != busID {
+			sb.WriteRune(']')
+			err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pt/%d.json", prevBusID), []byte(sb.String()), 0644)
+			if err != nil {
+				t.Fatalf("error writing urban_busses.js : %#v", err)
+			}
+			t.Logf("bus %s [%d] saved", prevBusNo, prevBusID)
+			prevBusID = busID
+			prevBusNo = busNo
+			count = 0
+			sb.Reset()
+			sb.WriteRune('[')
+		}
+
+		if count > 0 {
+			sb.WriteRune(',')
+		}
+
+		sb.WriteString(fmt.Sprintf("{%q:%.08f,%q:%.08f", "lt", lat, "ln", lng))
+		if isStop {
+			sb.WriteString(",\"s\":true")
+		}
+
+		sb.WriteRune('}')
+		count++
+	}
+	rows.Close()
 }

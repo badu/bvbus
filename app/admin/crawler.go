@@ -194,6 +194,29 @@ func (t *Time) Decompress(compressed uint16) {
 	t.Minute = int(compressed & 0x3F)           // Extract minute (6 bits)
 }
 
+func (t *Time) Diff(s Time) uint16 {
+	tInMinutes := t.Hour*60 + t.Minute
+	sInMinutes := s.Hour*60 + s.Minute
+	if tInMinutes > sInMinutes {
+		return uint16(tInMinutes-sInMinutes) + 1
+	}
+
+	return uint16(sInMinutes-tInMinutes) + 1
+}
+
+func (t *Time) After(s Time) bool {
+	tInMinutes := t.Hour*60 + t.Minute
+	sInMinutes := s.Hour*60 + s.Minute
+	if tInMinutes < sInMinutes || tInMinutes == sInMinutes {
+		return true
+	}
+	return false
+}
+
+func (t Time) String() string {
+	return fmt.Sprintf("%02d:%02d", t.Hour, t.Minute)
+}
+
 type TimeTable struct {
 	Name        string `json:"-"`
 	Line        string `json:"-"`

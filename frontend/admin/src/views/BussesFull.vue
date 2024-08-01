@@ -32,6 +32,11 @@
                 {{ selectedLine ? selectedLine.b : 'Select a bus line' }}
               </div>
             </template>
+            <template v-slot:end>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+              {{ selectedLine ? selectedLine.i : ''}}
+              </div>
+            </template>
           </Toolbar>
         </template>
         <Column field="i" header="OSM ID"/>

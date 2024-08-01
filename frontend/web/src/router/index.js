@@ -13,13 +13,13 @@ const router = createRouter({
 
 router.beforeResolve((to, from, next) => {
     if (to.name) {
-        console.log('loading...')
+
     }
     next()
 })
 
 router.afterEach((to, from) => {
-    console.log('loading done.')
+
 })
 
 export default router;

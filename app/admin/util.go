@@ -14,6 +14,13 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
+const (
+	RadiansPerDegree      = math.Pi / 180.0 //
+	DegreesPerRadian      = 180.0 / math.Pi //
+	EarthRadiusInMeters   = 6378137.0       // earth radius in meters
+	NauticalMilesInMeters = 1852            // nautical mile is 1852 meters
+)
+
 // these busses no longer exist in RATBV or they are doubled
 var excludedBusses = map[int64]struct{}{
 	5386184:  {}, // 5386184 - 18: Fundăturii cap linie => Bariera Bartolomeu (replaced by 18*)
@@ -219,4 +226,34 @@ func GetTilesInBBoxForZoom(northWestLat, northWestLong, southEastLat, southEastL
 	}
 
 	return result, Bounds{XFrom: northWestX, XTo: southEastX, YFrom: northWestY, YTo: southEastY}
+}
+
+func Haversine(startLat, startLon, destLat, destLon float64) float64 {
+	sinLat := math.Sin(((destLat - startLat) * RadiansPerDegree) / 2)
+	sinLon := math.Sin(((destLon - startLon) * RadiansPerDegree) / 2)
+
+	cosSourceLat := math.Cos(startLat * RadiansPerDegree)
+	cosTargetLat := math.Cos(destLat * RadiansPerDegree)
+
+	a := sinLat*sinLat + cosSourceLat*cosTargetLat*sinLon*sinLon // a = sin²(Δφ/2) + cos(φ1)⋅cos(φ2)⋅sin²(Δλ/2)
+
+	return 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a)) * EarthRadiusInMeters // δ = 2·atan2(√(a), √(1−a))
+}
+
+func Heading(startLat, startLon, destLat, destLon float64) float64 {
+	lat1 := startLat * RadiansPerDegree
+	lon1 := startLon * RadiansPerDegree
+
+	lat2 := destLat * RadiansPerDegree
+	lon2 := destLon * RadiansPerDegree
+
+	deltaLon := lon2 - lon1
+
+	y := math.Sin(deltaLon) * math.Cos(lat2)                                              // X = cos θb * sin ∆L
+	x := math.Cos(lat1)*math.Sin(lat2) - math.Sin(lat1)*math.Cos(lat2)*math.Cos(deltaLon) // Y = cos θa * sin θb – sin θa * cos θb * cos ∆L
+
+	heading := math.Atan2(y, x) // β = atan2( X, Y)
+	heading = DegreesPerRadian * heading
+
+	return heading
 }

@@ -6,7 +6,6 @@ const busLines = inject('busLines')
 const selectedBusLine = inject('selectedBusLine')
 
 const onBusSelect = (event) => {
-  console.log(event.data)
   selectedBusLine.value = event.data
 }
 </script>

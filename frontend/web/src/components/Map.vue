@@ -4,7 +4,7 @@
 <script setup>
 import {Feature} from "ol"
 import View from "ol/View.js"
-import {Tile as TileLayer, Vector as VectorLayer} from "ol/layer.js"
+import {Tile as TileLayer, Vector as VectorLayer, VectorImage} from "ol/layer.js"
 import {Cluster, Vector as VectorSource, XYZ} from "ol/source.js"
 import {Fill, Icon, RegularShape, Stroke, Style, Text} from "ol/style.js"
 import CircleStyle from "ol/style/Circle.js"
@@ -14,20 +14,22 @@ import {inject, onMounted} from "vue"
 import {easeOut} from 'ol/easing'
 import {getVectorContext} from "ol/render"
 import {boundingExtent} from "ol/extent.js"
-import LongTouch from "ol-ext/interaction/LongTouch.js"
-import {Circle, Point} from "ol/geom.js"
+import FlowLine from "ol-ext/style/FlowLine.js";
+import {LineString} from "ol/geom.js";
+import {fromLonLat} from "ol/proj.js";
 
-const emit = defineEmits(['selectStation', 'deselectStation', 'terminalChooser'])
+const emit = defineEmits(['selectStation', 'deselectStartStation', 'deselectEndStation', 'terminalChooser'])
 
 const mapCenter = inject('mapCenter')
 const mapZoom = inject('mapZoom')
 const maxZoom = inject('maxZoom')
-const selectedStations = inject('selectedStations')
 const busStations = inject('busStations')
 const loadingInProgress = inject('loadingInProgress')
 const terminalsMap = inject('terminalsMap')
 const terminals = inject('terminalsData')
 const toast = inject('toast')
+const selectedStartStation = inject('selectedStartStation')
+const selectedDestinationStation = inject('selectedDestinationStation')
 
 const view = new View({
   center: mapCenter.value,
@@ -52,7 +54,6 @@ const stationShape = new RegularShape({
     color: '#F5B301',
   }),
 })
-
 
 const clusterStyle = (feature, resolution) => {
   if (feature.get('features').length === 1) {
@@ -109,6 +110,21 @@ const clusterSource = new VectorSource()
 const cluster = new Cluster({source: clusterSource, distance: defaultDistance})
 const clusterLayer = new VectorLayer({source: cluster, style: clusterStyle})
 
+const trajectoryStyle = new FlowLine({
+  color: '#FED053',
+  color2: '#FED053',
+  width: 6,
+  width2: 6,
+  arrow: -1,
+})
+const trajectorySource = new VectorSource()
+const trajectoryLayer = new VectorImage({
+  source: trajectorySource,
+  style: function (feature, resolution) {
+    return trajectoryStyle
+  }
+})
+
 const customTileLayer = new TileLayer({
   source: new XYZ({
     url: './{z}/{x}/{y}.png',//'http://localhost:8080/tiles/{z}/{x}/{y}.png',
@@ -121,7 +137,7 @@ const customTileLayer = new TileLayer({
 const flashMarker = (map, marker) => {
   const duration = 1000
   const start = Date.now()
-  const flashGeom = marker.getGeometry().clone();
+  const flashGeom = marker.getGeometry().clone()
   let animate
   let listenerKey
   animate = function (event) {
@@ -130,6 +146,7 @@ const flashMarker = (map, marker) => {
     if (elapsed >= duration) {
       unByKey(listenerKey)
       clusterLayer.un('postrender', animate)
+      emit('selectStation', {featureId: marker.getId()})
       return
     }
     const vectorContext = getVectorContext(event)
@@ -148,20 +165,6 @@ const flashMarker = (map, marker) => {
   listenerKey = clusterLayer.on('postrender', animate)
 }
 
-const pulseFeature = (coord) => {
-  const f = new Feature(new Point(coord));
-  f.setStyle(new Style({
-    image: new Circle({
-      radius: 30,
-      stroke: new Stroke({color: "red", width: 2})
-    })
-  }))
-  map.animateFeature(f, new Zoom({
-    fade: easeOut,
-    duration: 800,
-  }))
-}
-
 onMounted(async () => {
   let initDone = false
 
@@ -176,7 +179,6 @@ onMounted(async () => {
     }
   })
 
-
   for (let i = 0; i < terminals.length; i++) {
     const marker = new Feature({geometry: terminals[i].point})
     marker.set('stationName', terminals[i].n)
@@ -188,35 +190,8 @@ onMounted(async () => {
 
   const map = new OLMap({
     target: 'map',
-    layers: [customTileLayer, clusterLayer],
+    layers: [customTileLayer, clusterLayer, trajectoryLayer],
     view: view,
-  })
-
-  const longTouch = new LongTouch({
-    pixelTolerance: 1,
-    handleLongTouchEvent: function (e) {
-      map.forEachFeatureAtPixel(e.pixel, function (feature) {
-        const markerIndex = stationMarkers.indexOf(feature)
-        if (markerIndex < 0) {
-          return
-        }
-
-        console.log('destination', feature.getId())
-      })
-    }
-  })
-
-  map.addInteraction(longTouch)
-  map.on(['longtouch'], function (e) {
-    console.log('very long touch', e)
-    map.forEachFeatureAtPixel(e.pixel, function (feature) {
-      const markerIndex = stationMarkers.indexOf(feature)
-      if (markerIndex < 0) {
-        return
-      }
-
-      console.log('destination', feature.getId())
-    })
   })
 
   map.on('loadstart', function () {
@@ -264,18 +239,20 @@ onMounted(async () => {
               return
             }
             const featureId = feature.getId()
-            const selIndex = selectedStations.value.indexOf(featureId)
-            if (selIndex < 0) {
-              view.animate({
-                center: stationMarkers[markerIndex].getGeometry().getCoordinates(),
-                duration: 1000,
-                zoom: maxZoom.value
-              })
-              emit('selectStation', {featureId: featureId})
-              flashMarker(map, feature)
-            } else {
-              emit('deselectStation', {featureId: featureId})
+            if (selectedStartStation.value !== null && selectedStartStation.value.i === featureId) {
+              emit('deselectStartStation', {featureId: featureId})
+              return
             }
+            if (selectedDestinationStation.value !== null && selectedDestinationStation.value.i === featureId) {
+              emit('deselectEndStation', {featureId: featureId})
+              return
+            }
+            view.animate({
+              center: stationMarkers[markerIndex].getGeometry().getCoordinates(),
+              duration: 1000,
+              zoom: maxZoom.value
+            })
+            flashMarker(map, feature)
             break
           case 0:
             console.error("error : no feature???")
@@ -300,25 +277,45 @@ onMounted(async () => {
             })
             return
           }
-          const selIndex = selectedStations.value.indexOf(feature.getId())
-          if (selIndex < 0) {
-            view.animate({
-              center: stationMarkers[markerIndex].getGeometry().getCoordinates(),
-              duration: 1000,
-              zoom: maxZoom.value
-            })
-            emit('selectStation', {featureId: feature.getId()})
-
-            flashMarker(map, feature)
-          } else {
-            emit('deselectStation', {featureId: feature.getId()})
+          const featureId = feature.getId()
+          if (selectedStartStation.value !== null && selectedStartStation.value.i === featureId) {
+            emit('deselectStartStation', {featureId: featureId})
+            return
           }
+          if (selectedDestinationStation.value !== null && selectedDestinationStation.value.i === featureId) {
+            emit('deselectEndStation', {featureId: featureId})
+            return
+          }
+          view.animate({
+            center: stationMarkers[markerIndex].getGeometry().getCoordinates(),
+            duration: 1000,
+            zoom: maxZoom.value
+          })
+          flashMarker(map, feature)
         })
       }
     })
   })
-
 })
+
+const displayTrajectory = (data, color) => {
+  let currentCoords = []
+  trajectoryStyle.setColor(color)
+  trajectoryStyle.setColor2(color)
+  for (let i = 0; i < data.length; i++) {
+    currentCoords.push(fromLonLat([data[i].ln, data[i].lt]))
+    if (data[i].s || i === data.length - 1) {
+      const lineString = new LineString(currentCoords)
+      const lineFeature = new Feature({geometry: lineString})
+      trajectorySource.addFeature(lineFeature)
+      currentCoords = []
+      currentCoords.push(fromLonLat([data[i].ln, data[i].lt]))
+    }
+  }
+
+}
+
+defineExpose({displayTrajectory})
 </script>
 <style scoped>
 #map {

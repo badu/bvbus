@@ -11,7 +11,6 @@ const toast = inject('toast')
 
 const emit = defineEmits(['selectTime'])
 
-const displayedTab = ref("current")
 let busTable = ref(null)
 
 const scrollToFirstValid = (currentTab, table) => {
@@ -19,7 +18,7 @@ const scrollToFirstValid = (currentTab, table) => {
     return
   }
 
-  if (currentTab === 'current') {
+  if (currentTab === 'Today') {
     const firstIndex = currentTimetable.value.findIndex(entry => {
       return entry.future
     })
@@ -28,8 +27,8 @@ const scrollToFirstValid = (currentTab, table) => {
       let retry
       retry = () => {
         const rows = table.$el.querySelectorAll('.p-datatable-selectable-row')
-        if (rows[firstIndex]) {
-          rows[firstIndex].scrollIntoView({behavior: 'auto'})
+        if (rows[firstIndex - 1]) {
+          rows[firstIndex - 1].scrollIntoView({behavior: 'auto'})
         } else {
           setTimeout(retry, 100)
         }
@@ -44,12 +43,8 @@ const scrollToFirstValid = (currentTab, table) => {
   if (!rows) {
     return
   }
-  rows[0].scrollIntoView({behavior: 'auto'})
-}
 
-const onTabChanged = (event) => {
-  displayedTab.value = event
-  scrollToFirstValid(event, busTable.value)
+  rows[0].scrollIntoView({behavior: 'auto'})
 }
 
 const onTimeSelect = (event) => {
@@ -70,28 +65,19 @@ watch(busTable, (newBusTable) => {
   scrollToFirstValid(displayedTab.value, newBusTable)
 })
 
-const responsiveOptions = ref([
-  {
-    breakpoint: '1400px',
-    numVisible: 2,
-    numScroll: 1
-  },
-  {
-    breakpoint: '1199px',
-    numVisible: 3,
-    numScroll: 1
-  },
-  {
-    breakpoint: '767px',
-    numVisible: 2,
-    numScroll: 1
-  },
-  {
-    breakpoint: '575px',
-    numVisible: 1,
-    numScroll: 1
+const displayedTab = ref("Today")
+watch(displayedTab, (newDisplayTab) => {
+  scrollToFirstValid(newDisplayTab, busTable.value)
+})
+
+const options = ref(['Today', isWeekend ? 'Weekdays' : 'Saturday / Sunday'])
+
+onMounted(() => {
+  if (displayedTab.value !== "Today") {
+    displayedTab.value = "Today"
   }
-])
+})
+
 </script>
 
 <template>
@@ -102,44 +88,43 @@ const responsiveOptions = ref([
       style="background-color: #1E232B">
 
     <template #header>
-      <h2 style="color: #FED053;user-select: none;">Station {{ selectedStartStation.n }}</h2>
-      <Carousel :value="selectedStartStation.busses"
-                :responsiveOptions="responsiveOptions"
-                :numVisible="3"
-                :numScroll="1"
-                circular
-                :autoplayInterval="3000"
-                :showIndicators="false"
-                :showNavigators="false">
-        <template #item="slotProps">
+      <Tag>
+        <div class="flex items-center gap-2 px-1" style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;flex-direction: row;">
+          <img src="./../../svgs/bus_stop_shelter.svg" style="height: 30px;width: 30px;"/>
+        </div>
+      </Tag>
+
+      <h2 style="color: #FED053;user-select: none;">{{ selectedStartStation.n }}</h2>
+
+      <Marquee id="linesInStation">
+        <template v-for="bus in selectedStartStation.busses">
+          <div style="white-space: nowrap;text-align: center;vertical-align: center;">
           <Tag
               :rounded="true"
-              :value="slotProps.data.busNo"
-              :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.bc}" />
+              :value="bus.busNo"
+              :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.bc }"/>
+          {{ bus.f }} - {{ bus.t }}
+          </div>
         </template>
-      </Carousel>
-
+      </Marquee>
     </template>
 
     <template #default>
       <DataTable ref="busTable"
                  v-model:selection="selectedTime"
-                 :value="displayedTab==='current' ? currentTimetable : extraTimetable"
-                 :selectionMode="displayedTab==='current' ? 'single' : null"
+                 :value="displayedTab==='Today' ? currentTimetable : extraTimetable"
+                 :selectionMode="displayedTab==='Today' ? 'single' : null"
                  scrollable
                  scrollHeight="flex"
                  @row-select="onTimeSelect"
                  style="background-color: #1E232B">
 
         <template #header>
-          <Tabs :value="displayedTab" @update:value="onTabChanged">
-            <TabList>
-              <Tab value="current" style="color: #FED053;width: 50%;">Current</Tab>
-              <Tab value="extra" style="color: #FED053;width: 50%;">
-                {{ isWeekend ? 'Weekdays' : 'Saturday / Sunday' }}
-              </Tab>
-            </TabList>
-          </Tabs>
+          <SelectButton
+              v-model="displayedTab"
+              :options="options"
+              aria-labelledby="basic"
+              style="display: flex;"/>
         </template>
 
         <Column header="Bus" style="color: #FED053;user-select: none;">
@@ -147,7 +132,7 @@ const responsiveOptions = ref([
             <Tag :rounded="true"
                  @click="onBusNumberClicked"
                  :value="slotProps.data.busNo"
-                 :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.bc}" />
+                 :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.bc}"/>
             <span style="color: #FED053;user-select: none;margin:5%;">{{ slotProps.data.to }}</span>
           </template>
         </Column>
