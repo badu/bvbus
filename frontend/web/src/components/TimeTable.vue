@@ -92,14 +92,14 @@ onMounted(() => {
         </div>
       </Tag>
 
-      <h2 style="color: #FED053;user-select: none;">{{ selectedStartStation.n }}</h2>
+      <h2 style="color: #FED053;user-select: none;">{{ selectedStartStation.isTerminal ? 'Terminal' : 'Station' }} {{ selectedStartStation.n }}</h2>
 
       <Marquee id="linesInStation">
         <template v-for="bus in selectedStartStation.busses">
           <div style="white-space: nowrap;text-align: center;vertical-align: center;">
           <Tag
               :rounded="true"
-              :value="bus.busNo"
+              :value="bus.n"
               :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc }"/>
           {{ bus.f }} - {{ bus.t }}
           </div>
@@ -129,7 +129,7 @@ onMounted(() => {
           <template #body="slotProps">
             <Tag :rounded="true"
                  @click="onBusNumberClicked"
-                 :value="slotProps.data.busNo"
+                 :value="slotProps.data.n"
                  :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: slotProps.data.c,color:slotProps.data.tc}"/>
             <span style="color: #FED053;user-select: none;margin:5%;">{{ slotProps.data.to }}</span>
           </template>

@@ -1,19 +1,20 @@
 export const service = (toast) => {
-    const loadStationTimetables = async (stationId, okHandler, errorHandler) => {
+    const loadStationTimetables = async (stationId, targetStation, okHandler, errorHandler) => {
         await fetch(`./tt/${stationId}.json`).then((response) => {
             const contentType = response.headers.get("content-type")
             if (response.ok) {
                 if (contentType && contentType.indexOf("application/json") !== -1) {
                     return response.json()
-                } else{
+                } else {
                     return null
                 }
             } else {
+                console.error("response", response)
                 return null
             }
         }).then((data) => {
             if (data) {
-                okHandler(data)
+                okHandler(data, targetStation)
             } else {
                 errorHandler()
             }
@@ -26,7 +27,7 @@ export const service = (toast) => {
             if (response.ok) {
                 if (contentType && contentType.indexOf("application/json") !== -1) {
                     return response.json()
-                } else{
+                } else {
                     return null
                 }
             } else {
@@ -41,13 +42,13 @@ export const service = (toast) => {
         })
     }
 
-    const loadDirectPathFinder = async(stationId, okHandler, errorHandler)=>{
+    const loadDirectPathFinder = async (stationId, okHandler, errorHandler) => {
         await fetch(`./pf/${stationId}.json`).then((response) => {
             const contentType = response.headers.get("content-type")
             if (response.ok) {
                 if (contentType && contentType.indexOf("application/json") !== -1) {
                     return response.json()
-                } else{
+                } else {
                     return null
                 }
             } else {
@@ -62,13 +63,13 @@ export const service = (toast) => {
         })
     }
 
-    const loadIndirectPathFinder = async(stationId, okHandler, errorHandler)=>{
+    const loadIndirectPathFinder = async (stationId, okHandler, errorHandler) => {
         await fetch(`./pf/${stationId}-cross.json`).then((response) => {
             const contentType = response.headers.get("content-type")
             if (response.ok) {
                 if (contentType && contentType.indexOf("application/json") !== -1) {
                     return response.json()
-                } else{
+                } else {
                     return null
                 }
             } else {

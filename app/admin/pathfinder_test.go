@@ -72,6 +72,7 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 	}
 	rows.Close()
 	siblingBusses := make(map[int64]int64)
+
 	for _, busLine1 := range busses {
 		for _, busLine2 := range busses {
 			if busLine1.Line == busLine2.Line && busLine1.Dir != busLine2.Dir {
@@ -314,6 +315,7 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 				Meters:        uint16(currentDistance),
 				Minutes:       diff,
 			}
+
 			currentDistance = 0.0
 		}
 
@@ -339,8 +341,8 @@ func TestGenerateDistancesAndTimesBetweenStations(t *testing.T) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("const distances = {\n")
-	comma := false
+	sb.WriteString("const distances = new Map();\n")
+
 	seen := make(map[string]struct{})
 
 	sortedResult := make([]DistanceAndMinutes, 0)
@@ -354,25 +356,20 @@ func TestGenerateDistancesAndTimesBetweenStations(t *testing.T) {
 	for _, measurement := range sortedResult {
 		key := fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)
 		if _, has := seen[key]; !has {
-			if comma {
-				sb.WriteRune(',')
-			} else {
-				comma = true
-			}
-			sb.WriteString(fmt.Sprintf("%q:{%q:%d,%q:%d}", key, "d", measurement.Meters, "m", measurement.Minutes))
+			sb.WriteString(fmt.Sprintf("distances.set(%q,{%q:%d,%q:%d})\n", key, "d", measurement.Meters, "m", measurement.Minutes))
 		}
 		seen[key] = struct{}{}
 	}
-	sb.WriteString("};\nexport default distances;")
+	sb.WriteString("export default distances;")
 
 	err = os.WriteFile("./../../frontend/web/src/distances.js", []byte(sb.String()), 0644)
 	if err != nil {
-		t.Fatalf("error writing urban_busses.js : %#v", err)
+		t.Fatalf("error writing distances.js : %#v", err)
 	}
 }
 
 func TestPathFinderWithNum(t *testing.T) {
-	const writeToDisk = true
+	const writeToDisk = false
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -397,14 +394,18 @@ func TestPathFinderWithNum(t *testing.T) {
 		if _, has := uniqueStationNames[station.Name]; !has {
 			uniqueStationNames[station.Name] = make([]int64, 0)
 		}
-		uniqueStationNames[station.Name] = append(uniqueStationNames[station.Name], stationID)
 
+		uniqueStationNames[station.Name] = append(uniqueStationNames[station.Name], stationID)
 		graph.AddNode(station)
 	}
 
-	seen := make(map[string]struct{})
+	seen := make(map[string]string)
 	for _, measurement := range result.Distances {
 		if graph.HasEdgeFromTo(measurement.FromStationID, measurement.ToStationID) {
+			if len(seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)]) > 0 {
+				seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)] += ","
+			}
+			seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)] += result.Busses[measurement.ForBusID].Line
 			continue
 		}
 
@@ -412,7 +413,7 @@ func TestPathFinderWithNum(t *testing.T) {
 			logger.Error("ERROR EMPTY KEY")
 		}
 
-		if _, has := seen[measurement.Key]; has {
+		if _, has := seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)]; has {
 			logger.Error("ERROR HAS SEEN", "key", measurement.Key)
 		}
 
@@ -426,20 +427,28 @@ func TestPathFinderWithNum(t *testing.T) {
 			t.Fatalf("error finding end station %d", measurement.ToStationID)
 		}
 
+		if measurement.Meters == 0 {
+			logger.Error("ERROR : zero meters")
+		}
+
 		graph.SetWeightedEdge(simple.WeightedEdge{F: startStation, T: endStation, W: float64(measurement.Meters)})
-		seen[measurement.Key] = struct{}{}
+
+		seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)] = result.Busses[measurement.ForBusID].Line
 	}
 
 	for _, bus := range result.Busses {
 		if bus.IsMetropolitan {
 			continue
 		}
+
 		for index := range bus.Stations {
 			if index >= len(bus.Stations)-1 {
 				continue
 			}
+
 			startStation := bus.Stations[index]
 			destinationStation := bus.Stations[index+1]
+
 			if !graph.HasEdgeFromTo(startStation.OSMID, destinationStation.OSMID) {
 				key := fmt.Sprintf("%d-%d-%d", startStation.OSMID, destinationStation.OSMID, bus.OSMID)
 
@@ -452,21 +461,58 @@ func TestPathFinderWithNum(t *testing.T) {
 		}
 	}
 
+	// add edges for stations with the same name (crossings)
+	for _, stationsIDs := range uniqueStationNames {
+		for i := 0; i < len(stationsIDs); i++ {
+			sourceStation, _ := result.Stations[stationsIDs[i]]
+			for j := 0; j < len(stationsIDs); j++ {
+				if graph.HasEdgeFromTo(stationsIDs[i], stationsIDs[j]) {
+					continue
+				}
+
+				if i == j {
+					continue
+				}
+
+				targetStation, _ := result.Stations[stationsIDs[j]]
+				if graph.HasEdgeFromTo(sourceStation.OSMID, targetStation.OSMID) {
+					logger.Warn("edge exists (crossing)", "first", sourceStation.OSMID, "second", targetStation.OSMID)
+					continue
+				}
+
+				// logger.Info("adding 100m edge between", "from", sourceStation.Name, "to", targetStation.Name, "fid", sourceStation.OSMID, "tid", targetStation.OSMID)
+				graph.SetWeightedEdge(simple.WeightedEdge{F: sourceStation, T: targetStation, W: 100})
+
+			}
+		}
+	}
+
 	result.Distances = nil // free up some RAM
 
+	var graphSb strings.Builder
+	graphSb.WriteRune('{')
+	graphSb.WriteString(fmt.Sprintf("%q:[", "nodes"))
 	it := graph.Nodes()
+	q := 0
 	for it.Next() {
 		station, has := result.Stations[it.Node().ID()]
 		if !has {
 			logger.Error("node", "NOT FOUND", it.Node().ID())
 			continue
 		}
-		_ = station
-		// logger.Info("NODE", "named", station.Name, "lat", station.Lat, "lon", station.Lon)
+		if q > 0 {
+			graphSb.WriteRune(',')
+		}
+		graphSb.WriteString(fmt.Sprintf("{%q:%d,%q:%.08f,%q:%.08f}", "id", station.OSMID, "lt", station.Lat, "ln", station.Lon))
+		q++
 	}
+	graphSb.WriteRune(']')
+	graphSb.WriteRune(',')
 
 	pairs := make(map[string]struct{})
 	ed := graph.Edges()
+	graphSb.WriteString(fmt.Sprintf("%q:[", "edges"))
+	q = 0
 	for ed.Next() {
 		edge := ed.Edge()
 		from, hasFrom := result.Stations[edge.From().ID()]
@@ -487,10 +533,22 @@ func TestPathFinderWithNum(t *testing.T) {
 			pairs[fmt.Sprintf("%d-%d", from.OSMID, to.OSMID)] = struct{}{}
 		}
 
+		if q > 0 {
+			graphSb.WriteRune(',')
+		}
+		graphSb.WriteString(fmt.Sprintf("{%q:%d,%q:%d,%q:%q}", "f", from.OSMID, "t", to.OSMID, "b", seen[fmt.Sprintf("%d-%d", from.OSMID, to.OSMID)]))
+		q++
 		// logger.Info("EDGE", "from", from.Name, "to", to.Name, "fromID", from.OSMID, "toID", to.OSMID)
 	}
+	graphSb.WriteRune(']')
+	graphSb.WriteRune('}')
 
-	noSolutions := make(map[int64][]int64)
+	err = os.WriteFile("./../../frontend/web/public/graph.json", []byte(graphSb.String()), 0644)
+	if err != nil {
+		t.Fatalf("error writing graph.json : %#v", err)
+	}
+
+	noSolutions := make(map[int64]int64)
 	count := len(result.Stations)
 	for startStationID, startStation := range result.Stations {
 		if startStation.IsOutsideCity {
@@ -499,9 +557,10 @@ func TestPathFinderWithNum(t *testing.T) {
 		}
 
 		startNode, _ := result.Stations[startStationID]
+
 		solutions, ok := path.BellmanFordAllFrom(startNode, graph)
 		if !ok {
-			t.Fatalf("error finding all solutions")
+			t.Fatalf("bellman ford error")
 		}
 
 		siblings, hasSiblings := uniqueStationNames[startStation.Name]
@@ -509,6 +568,10 @@ func TestPathFinderWithNum(t *testing.T) {
 		sb.WriteRune('[')
 		wroteOne := false
 		for endStationID, endStation := range result.Stations {
+			if theID, hasNoSolution := noSolutions[endStationID]; hasNoSolution && theID == startStationID {
+				continue
+			}
+
 			if endStation.IsOutsideCity {
 				continue
 			}
@@ -538,21 +601,9 @@ func TestPathFinderWithNum(t *testing.T) {
 			}
 
 			allPaths, weight := solutions.AllTo(endStationID)
-
 			if len(allPaths) == 0 {
-				if _, has := noSolutions[startStationID]; !has {
-					noSolutions[startStationID] = make([]int64, 0)
-				}
-				hasIt := false
-				for _, sID := range noSolutions[startStationID] {
-					if sID == endStationID {
-						hasIt = true
-						break
-					}
-				}
-				if !hasIt {
-					noSolutions[startStationID] = append(noSolutions[startStationID], endStationID)
-				}
+				// logger.Warn("NO SOLUTION", "from", startNode.Name, "to", endStation.Name, "fid", startStationID, "did", endStationID)
+				noSolutions[startStationID] = endStationID
 				continue
 			}
 
@@ -599,7 +650,7 @@ func TestPathFinderWithNum(t *testing.T) {
 		if writeToDisk {
 			err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pf/%d.json", startStationID), []byte(sb.String()), 0644)
 			if err != nil {
-				t.Fatalf("error writing urban_busses.js : %#v", err)
+				t.Fatalf("error writing path finder json : %#v", err)
 			}
 		}
 
@@ -607,91 +658,5 @@ func TestPathFinderWithNum(t *testing.T) {
 		// t.Logf("%d written, %d remaining", startStationID, count)
 	}
 
-	// add edges for stations with the same name (crossings)
-	for _, stationsIDs := range uniqueStationNames {
-		for i := 0; i < len(stationsIDs); i++ {
-
-			sourceStation, _ := result.Stations[stationsIDs[i]]
-			for j := 0; j < len(stationsIDs); j++ {
-				if graph.HasEdgeFromTo(stationsIDs[i], stationsIDs[j]) {
-					continue
-				}
-				if i != j {
-					targetStation, _ := result.Stations[stationsIDs[j]]
-					// logger.Info("adding 100m edge between", "from", sourceStation.Name, "to", targetStation.Name, "fid", sourceStation.OSMID, "tid", targetStation.OSMID)
-					graph.SetWeightedEdge(simple.WeightedEdge{F: sourceStation, T: targetStation, W: 100})
-				}
-			}
-		}
-	}
-
-	count = len(noSolutions)
-	for startStationID, endStationIDs := range noSolutions {
-		startNode, _ := result.Stations[startStationID]
-		solutions, ok := path.BellmanFordAllFrom(startNode, graph)
-		if !ok {
-			t.Fatalf("error finding all solutions")
-		}
-
-		var sb strings.Builder
-		sb.WriteRune('[')
-		wroteOne := false
-		for _, endStationID := range endStationIDs {
-			if startStationID == endStationID {
-				continue
-			}
-
-			allPaths, weight := solutions.AllTo(endStationID)
-			if len(allPaths) == 0 {
-				continue
-			}
-
-			if wroteOne {
-				sb.WriteRune(',')
-			}
-			sb.WriteString(fmt.Sprintf("{%q:%d,%q:%.00f,%q:[", "t", endStationID, "d", weight, "s"))
-			wroteOne = true
-
-			for i, solution := range allPaths {
-				if i > 0 {
-					sb.WriteRune(',')
-				}
-
-				if i > 5 { // take only first 5 solutions
-					break
-				}
-
-				sb.WriteString(fmt.Sprintf("{%q:%d,%q:[", "i", i+1, "s"))
-
-				for start := 1; start < len(solution)-1; start++ {
-					if start > 1 {
-						sb.WriteRune(',')
-					}
-
-					sb.WriteString(fmt.Sprintf("%d", solution[start].ID()))
-				}
-
-				sb.WriteRune(']')
-				sb.WriteRune('}')
-			}
-
-			sb.WriteRune(']')
-			sb.WriteRune('}')
-		}
-
-		sb.WriteRune(']')
-
-		count--
-		if wroteOne && writeToDisk {
-			err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pf/%d-cross.json", startStationID), []byte(sb.String()), 0644)
-			if err != nil {
-				t.Fatalf("error writing urban_busses.js : %#v", err)
-			}
-			// t.Logf("%d written %d, %d remaining", startStationID, len(endStationIDs), count)
-		} else {
-			// t.Logf("%d NOT written (has no solution)", startStationID)
-		}
-	}
-	noSolutions = nil
 	t.Log("DONE.")
 }

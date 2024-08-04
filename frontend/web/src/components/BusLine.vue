@@ -1,12 +1,11 @@
 <script setup>
-import {computed, inject, ref, watch} from "vue";
+import {inject, ref, watch} from "vue";
 
 const busLinesMap = inject('busLinesMap')
 const busStationsMap = inject('busStationsMap')
-const stationsToLinesMap = inject('stationsToLinesMap')
+const bussesInStations = inject('bussesInStations')
 const metroBusLinesMap = inject('metroBusLinesMap')
 const metroBusStationsMap = inject('metroBusStationsMap')
-const metroStationsToLinesMap = inject('metroStationsToLinesMap')
 const selectedBusLine = inject('selectedBusLine')
 const buslineVisible = inject('buslineVisible')
 const stations = ref([])
@@ -14,41 +13,44 @@ const selectedStartStation = inject('selectedStartStation')
 
 watch(selectedBusLine, (newSelectedBusLine) => {
   const newStations = []
-  if (newSelectedBusLine.m) {
+  if (!newSelectedBusLine.m) {
     newSelectedBusLine.s.forEach((stationId) => {
-      if (metroBusStationsMap.has(stationId)) {
-        const station = {...metroBusStationsMap.get(stationId)}
+      if (busStationsMap.has(stationId)) {
+        const station = {...busStationsMap.get(stationId)}
         station.otherBusses = []
-        const otherLines = metroStationsToLinesMap.get(stationId)
-        for (let lineId of otherLines.keys()) {
-          if (lineId === newSelectedBusLine.i) {
-            continue
-          }
 
-          if (!metroBusLinesMap.has(lineId)) {
-            console.error('line with id not found', lineId)
-          } else {
-            station.otherBusses.push(metroBusLinesMap.get(lineId))
+        const busses = bussesInStations.get(stationId)
+        for (let i = 0; i < busses.length; i++) {
+          if (busses[i].i !== newSelectedBusLine.i) {
+            if (busLinesMap.has(busses[i].i)) {
+              station.otherBusses.push(busLinesMap.get(busses[i].i))
+            } else if (metroBusLinesMap.has(busses[i].i)) {
+              station.otherBusses.push(metroBusLinesMap.get(busses[i].i))
+            } else {
+              console.error('line with id not found', busses[i].i)
+            }
           }
         }
+
         newStations.push(station)
       }
     })
   } else {
     newSelectedBusLine.s.forEach((stationId) => {
-      if (busStationsMap.has(stationId)) {
-        const station = {...busStationsMap.get(stationId)}
+      if (metroBusStationsMap.has(stationId)) {
+        const station = {...metroBusStationsMap.get(stationId)}
         station.otherBusses = []
-        const otherLines = stationsToLinesMap.get(stationId)
-        for (let lineId of otherLines.keys()) {
-          if (lineId === newSelectedBusLine.i) {
-            continue
-          }
 
-          if (!busLinesMap.has(lineId)) {
-            console.error('line with id not found', lineId)
-          } else {
-            station.otherBusses.push(busLinesMap.get(lineId))
+        const busses = bussesInStations.get(stationId)
+        for (let i = 0; i < busses.length; i++) {
+          if (busses[i].i !== newSelectedBusLine.i) {
+            if (busLinesMap.has(busses[i].i)) {
+              station.otherBusses.push(busLinesMap.get(busses[i].i))
+            } else if (metroBusLinesMap.has(busses[i].i)) {
+              station.otherBusses.push(metroBusLinesMap.get(busses[i].i))
+            } else {
+              console.error('line with id not found', busses[i].i)
+            }
           }
         }
 
@@ -56,6 +58,7 @@ watch(selectedBusLine, (newSelectedBusLine) => {
       }
     })
   }
+
   stations.value = newStations
 })
 

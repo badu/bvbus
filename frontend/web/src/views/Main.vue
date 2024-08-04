@@ -6,12 +6,12 @@ import TerminalChooser from "@/components/TerminalChooser.vue";
 
 const toast = inject('toast')
 const busStationsMap = inject('busStationsMap')
+const metroBusStationsMap = inject('metroBusStationsMap')
 const busLinesMap = inject('busLinesMap')
 const selectedStartStation = inject('selectedStartStation')
 const selectedDestinationStation = inject('selectedDestinationStation')
 const loadStationTimetables = inject('loadStationTimetables')
 const loadDirectPathFinder = inject('loadDirectPathFinder')
-const loadIndirectPathFinder = inject('loadIndirectPathFinder')
 const loadBusPoints = inject('loadBusPoints')
 const bussesListVisible = inject('bussesListVisible')
 const metroBussesListVisible = inject('metroBussesListVisible')
@@ -32,12 +32,32 @@ watch(selectedBusLine, (newSelectedBusLine) => {
   buslineVisible.value = true
 })
 
+const loadAndDisplayGraph = async () => {
+  await fetch(`./graph.json`).then((response) => {
+    const contentType = response.headers.get("content-type")
+    if (response.ok) {
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        return response.json()
+      } else {
+        return null
+      }
+    } else {
+      console.error('error loading graph.json', response)
+      return null
+    }
+  }).then((data) => {
+    if (data) {
+      brasovMap.value.displayGraph(data)
+    }
+  })
+}
+
 const items = ref([
   {
     label: 'Busses',
     icon: 'pi pi-map-marker',
     command: () => {
-      const showPosition = (position) => {
+      const showPosition = async (position) => {
         userLocation.value = {lat: position.coords.latitude, lon: position.coords.longitude, acc: position.accuracy}
         toast.add({
           severity: 'info',
@@ -45,6 +65,7 @@ const items = ref([
           detail: `Lat ${userLocation.value.lat} Lon ${userLocation.value.lon}`,
           life: 3000
         })
+        loadAndDisplayGraph()
       }
 
       const showError = (error) => {
@@ -112,60 +133,27 @@ const items = ref([
   }
 ])
 
-const loadTimetablesForStation = async () => {
+watch(selectedStartStation, async (newSelectedStartStation) => {
+  if (!newSelectedStartStation) {
+    return
+  }
+
   if (!selectedStartStation.value.timetable) {
     loadingInProgress.value = true
-    await loadStationTimetables(selectedStartStation.value.i, processTimetables, () => {
+    await loadStationTimetables(selectedStartStation.value.i, selectedStartStation.value, processTimetables, () => {
       console.error('error loading time tables', selectedStartStation.value.i)
       toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
       loadingInProgress.value = false
     })
-  } else {
-    timetableVisible.value = true
-  }
-}
-
-const onSelectStation = async (event) => {
-  if (selectedStartStation.value === null) {
-    if (busStationsMap.has(event.featureId)) {
-      selectedStartStation.value = busStationsMap.get(event.featureId)
-      selectedStartStation.value.busses = []
-    } else {
-      console.error(`error finding bus station ${event.featureId} in map`)
-    }
-  } else if (selectedDestinationStation.value === null) {
-    if (busStationsMap.has(event.featureId)) {
-      selectedDestinationStation.value = busStationsMap.get(event.featureId)
-      selectedDestinationStation.value.busses = []
-    } else {
-      console.error(`error finding bus station ${event.featureId} in map`)
-    }
-    pathfinderMode.value = true
     loadingInProgress.value = false
-    await loadDirectPathFinder(selectedStartStation.value.i, (data) => {
-      console.log('loadDirectPathFinder', data)
-    }, () => {
-      toast.add({severity: 'error', summary: 'Error loading pathfinding', life: 3000})
-      loadingInProgress.value = false
-    })
-
+    if (!selectedDestinationStation.value) {
+      timetableVisible.value = true
+    }
   } else {
-    if (busStationsMap.has(event.featureId)) {
-      selectedStartStation.value = busStationsMap.get(event.featureId)
-      selectedStartStation.value.busses = []
-      selectedDestinationStation.value = null
-    } else {
-      console.error(`error finding bus station ${event.featureId} in map`)
+    if (!selectedDestinationStation.value) {
+      timetableVisible.value = true
     }
   }
-}
-
-watch(selectedStartStation, (newSelectedStartStation) => {
-  if (!newSelectedStartStation) {
-    return
-  }
-  newSelectedStartStation.busses = []
-  setTimeout(loadTimetablesForStation, 500)
 })
 
 const onDeselectStartStation = (event) => {
@@ -179,18 +167,282 @@ const onDeselectEndStation = (event) => {
   selectedDestinationStation.value = null
 }
 
-const onTerminalChooser = (event) => {
-  const newTerminalsList = []
-  currentTerminal.value = event.terminal
-  event.terminal.c.forEach((choice) => {
-    if (choice.busses.length > 0) {
-      newTerminalsList.push({i: choice.i, s: choice.s, busses: choice.busses})
+const onTerminalChooser = async (event) => {
+  loadingInProgress.value = true
+  const promises = []
+  for (let i = 0; i < event.terminal.c.length; i++) {
+    const choice = event.terminal.c[i]
+    if (choice) {
+      // first load the timetables, because we are going to need it in some scenarios
+      let targetStation
+      if (busStationsMap.has(choice.i)) {
+        targetStation = busStationsMap.get(choice.i)
+      } else if (metroBusStationsMap.has(choice.i)) {
+        targetStation = metroBusStationsMap.get(choice.i)
+      } else {
+        console.error("bus station not found anywhere", choice.i)
+        continue
+      }
+
+      if (!targetStation.timetable) {
+        promises.push(
+            loadStationTimetables(choice.i, targetStation, processTimetables, () => {
+              console.error('error loading time tables', value.i)
+              toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
+              loadingInProgress.value = false
+            })
+        )
+      }
     } else {
-      console.error("choice with no busses", choice)
+      console.error("bad terminal choice with (no busses or no choice)", choice)
+    }
+  }
+  await Promise.all(promises)
+  // we are done with loading timetables
+  currentTerminal.value = event.terminal
+  terminalsList.value = event.terminal.c
+  loadingInProgress.value = false
+  terminalChooserVisible.value = true
+}
+
+const getNextDepartureTime = (currentTime, timetable, busId) => {
+  for (let time of timetable) {
+    if (busId) {
+      if (time.i === busId) {
+        if (time.minutes >= currentTime) {
+          return time
+        }
+      }
+    } else {
+      if (time.minutes >= currentTime) {
+        return time
+      }
+    }
+  }
+  return null
+}
+
+const getNextDepartureTimeForBusses = (currentTime, timetable, bussesIds) => {
+  for (let time of timetable) {
+    if (time.minutes >= currentTime && bussesIds.indexOf(time.i) >= 0) {
+      return time
+    }
+  }
+  return null
+}
+
+const getBussesIdsBetweenStations = (startStation, endStation) => {
+  const busses = []
+  busLinesMap.forEach((value, key, map) => {
+    for (let i = 1; i < value.s.length - 1; i++) {
+      if (value.s[i - 1] === startStation && value.s[i] === endStation) {
+        busses.push(value.i)
+      }
     }
   })
-  terminalsList.value = newTerminalsList
-  terminalChooserVisible.value = true
+  return busses
+}
+
+const findBestTimes = (stations, finalStation) => {
+  const now = new Date()
+  let currentTime = now.getHours() * 60 + now.getMinutes()
+  let currentBus = null
+
+  let nextDepartureTime = getNextDepartureTime(currentTime, stations[0].timetable, currentBus)
+  if (nextDepartureTime === null) {
+    console.error("no bus found at departure time")
+    return
+  } else if (!busLinesMap.has(nextDepartureTime.i)) {
+    console.error("bus not found in map")
+    return
+  }
+
+  const edges = []
+
+  currentBus = busLinesMap.get(nextDepartureTime.i)
+  for (let i = 0; i < stations.length; i++) {
+    let stationIndex = currentBus.s.indexOf(stations[i].i)
+    if (stationIndex < 0) {
+      const dropOffTime = getNextDepartureTime(currentTime, stations[i - 1].timetable, currentBus.i)
+      console.log(`${i} drop off bus ${currentBus.n} station ${stations[i - 1].n} ${stations[i - 1].i} arrival ${dropOffTime.time}`)
+      const bussesIds = getBussesIdsBetweenStations(stations[i - 1].i, stations[i].i)
+      const next = getNextDepartureTimeForBusses(currentTime, stations[i - 1].timetable, bussesIds)
+      if (next !== null) {
+        currentBus = busLinesMap.get(next.i)
+        currentTime = next.minutes
+        console.log(`${i} hop on bus ${currentBus.n} station ${stations[i - 1].n} ${stations[i - 1].i} arrival ${next.time}`)
+      } else {
+        // result is in "extraTimetable"
+        console.error(`${i} no busses found between`, stations[i - 1].n, stations[i].n, stations[i - 1].i, stations[i].i, bussesIds)
+      }
+    }
+
+    nextDepartureTime = getNextDepartureTime(currentTime, stations[i].timetable, currentBus.i)
+    if (nextDepartureTime === null) {
+      console.log(`${i} nextDepartureTime is null`)
+      break
+    }
+
+    if (i > 0) {
+      edges.push({f: stations[i - 1].i, t: stations[i].i, c: currentBus.c})
+    }
+    currentTime = nextDepartureTime.minutes
+    console.log(`${i} bus ${currentBus.n} station ${stations[i].n} ${stations[i].i} arrival ${nextDepartureTime.time}`)
+  }
+
+  edges.push({f: stations[stations.length - 1].i, t: finalStation.i, c: currentBus.c})
+
+  const dropOffTime = getNextDepartureTime(currentTime, finalStation.timetable, currentBus.i)
+  if (dropOffTime !== null) {
+    console.log(`final drop off bus ${currentBus.n} station ${finalStation.n} ${finalStation.i} arrival ${dropOffTime.time}`)
+    currentTime = dropOffTime.minutes
+  } else {
+    if (!currentBus.siblingId){
+      console.error(`current bus has no sibling ${currentBus.i}`)
+      return
+    }
+    if (!busLinesMap.has(currentBus.siblingId)){
+      console.error(`sibling bus not found in the bus lines map ${currentBus.i} ${currentBus.siblingId}`)
+      return
+    }
+
+    // ok, it's a terminal, we need to find the sibling bus and the station from which that bus goes
+    const siblingBus = busLinesMap.get(currentBus.siblingId)
+
+    // we have the sibling bus
+    if (siblingBus) {
+      busStationsMap.forEach((value, key, map) => {
+        for (let i = 0; i < value.busses.length; i++) {
+          if (value.busses[i].i === siblingBus.i && value.n === finalStation.n) {
+            // we have the sibling station
+            if (!value.timetable) {
+              console.error(`timetable is missing for station ${value.n} [${value.i}]`)
+              break
+            }
+            const dropOffTime = getNextDepartureTime(currentTime, value.timetable, siblingBus.i)
+            if (dropOffTime !== null) {
+              console.log(`final drop off sibling bus ${currentBus.n} station ${value.n} ${value.i} arrival ${dropOffTime.time}`)
+              currentTime = dropOffTime.minutes
+            } else {
+              console.error("error finding next departure time of the sibling bus", siblingBus.i, finalStation.i)
+            }
+            break
+          }
+        }
+      })
+    } else {
+      console.error("error finding sibling bus")
+    }
+  }
+
+  if (dropOffTime !== null) {
+    const hours = Math.floor(currentTime / 60)
+    const minutes = currentTime - hours * 60
+    console.log('arrival', hours, minutes)
+  }
+
+  return edges
+}
+
+const loadPathFinder = async () => {
+  console.log('loading paths for', selectedStartStation.value.i)
+  await loadDirectPathFinder(selectedStartStation.value.i, async (data) => {
+
+    for (const stationInfo of data) {
+      if (busStationsMap.has(stationInfo.t)) {
+        const station = busStationsMap.get(stationInfo.t)
+        if (station.i === selectedDestinationStation.value.i) {
+          console.log(`direct ${selectedStartStation.value.n} to ${station.n} ${stationInfo.d} meters long ${selectedStartStation.value.i}-${selectedDestinationStation.value.i}`)
+          const stations = []
+          const promises = []
+          const nodes = []
+          stations.push(selectedStartStation.value)
+          nodes.push({
+            id: selectedStartStation.value.i,
+            lt: selectedStartStation.value.lt,
+            ln: selectedStartStation.value.ln
+          })
+          stationInfo.s.forEach((solution) => {
+            solution.s.forEach((stationId) => {
+              if (busStationsMap.has(stationId)) {
+                const targetStation = busStationsMap.get(stationId)
+                nodes.push({id: targetStation.i, lt: targetStation.lt, ln: targetStation.ln})
+                stations.push(targetStation)
+                promises.push(
+                    loadStationTimetables(stationId, targetStation, processTimetables, () => {
+                      console.error('error loading time tables', stationId)
+                      toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
+                      loadingInProgress.value = false
+                    })
+                )
+              } else {
+                console.error("station not found", stationId)
+              }
+            })
+          })
+
+          const finalStation = busStationsMap.get(selectedDestinationStation.value.i)
+          nodes.push({
+            id: finalStation.i,
+            lt: finalStation.lt,
+            ln: finalStation.ln
+          })
+          promises.push(
+              loadStationTimetables(finalStation.i, finalStation, processTimetables, () => {
+                console.error('error loading time tables', finalStation.i)
+                toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
+                loadingInProgress.value = false
+              })
+          )
+
+          await Promise.all(promises)
+          const edges = findBestTimes(stations, finalStation)
+          const result = {nodes: nodes, edges: edges}
+          brasovMap.value.displayGraph(result)
+        }
+      }
+    }
+
+
+
+  }, () => {
+    toast.add({severity: 'error', summary: 'Error loading pathfinding', life: 3000})
+    loadingInProgress.value = false
+  })
+}
+
+
+const onSelectStation = async (event) => {
+  // selected station came from terminal chooser => closing it
+  if (terminalChooserVisible.value && terminalChooserVisible.value === true) {
+    terminalChooserVisible.value = false
+  }
+
+  let targetStation
+  // check if we know the station
+  if (busStationsMap.has(event.stationId)) {
+    targetStation = busStationsMap.get(event.stationId)
+  } else if (metroBusStationsMap.has(event.stationId)) {
+    targetStation = metroBusStationsMap.get(event.stationId)
+  } else {
+    console.error(`${event.stationId} station not found in the busStationsMap and metroBusStationsMap`)
+    return
+  }
+
+  // logic = 1. no start selected => start gets selected
+  //         2. no destination selected => destination gets selected
+  //         3. start and destination selected => start gets replaced
+  if (selectedStartStation.value === null) {
+    selectedStartStation.value = targetStation
+  } else if (selectedDestinationStation.value === null) {
+    selectedDestinationStation.value = targetStation
+    pathfinderMode.value = true
+    await loadPathFinder()
+  } else {
+    console.log('start station change (destination unchanged)')
+    selectedStartStation.value = targetStation
+    selectedDestinationStation.value = null
+  }
 }
 
 onMounted(async () => {
@@ -198,76 +450,10 @@ onMounted(async () => {
   //selectedBusLine.value = busLinesMap.get(5417775)
   //buslineVisible.value = true
 
-  selectedStartStation.value = busStationsMap.get(273437289)
-  selectedStartStation.value.busses = []
+  //selectedStartStation.value = busStationsMap.get(273437289)
+  //selectedDestinationStation.value = busStationsMap.get(9183614613)
 
-  selectedDestinationStation.value = busStationsMap.get(9275068611)
-  selectedDestinationStation.value.busses = []
-
-  await loadDirectPathFinder(selectedStartStation.value.i, async (data) => {
-    let targetFound = false
-    data.forEach((stationInfo) => {
-      if (busStationsMap.has(stationInfo.t)) {
-        const station = busStationsMap.get(stationInfo.t)
-        if (station.i === selectedDestinationStation.value.i) {
-          console.log(`direct ${selectedStartStation.value.n} to ${station.n} ${stationInfo.d} meters long`)
-          targetFound = true
-          stationInfo.s.forEach((solution) => {
-            console.log('direct solution', solution)
-            solution.s.forEach((stationId) => {
-              if (busStationsMap.has(stationId)) {
-                const sta = busStationsMap.get(stationId)
-                console.log(`direct ${sta.i} ${sta.n}`)
-              } else {
-                console.error("station not found", stationId)
-              }
-            })
-          })
-        }
-      }
-    })
-
-    if (!targetFound) {
-      await loadIndirectPathFinder(selectedStartStation.value.i, (data) => {
-        data.forEach((stationInfo) => {
-          if (busStationsMap.has(stationInfo.t)) {
-            const station = busStationsMap.get(stationInfo.t)
-            if (station.i === selectedDestinationStation.value.i) {
-              console.log(`indirect ${selectedStartStation.value.n} to ${station.n} ${stationInfo.d} meters long`)
-              targetFound = true
-              stationInfo.s.forEach((solution) => {
-                console.log('indirect solution', solution)
-                solution.s.forEach((stationId) => {
-                  if (busStationsMap.has(stationId)) {
-                    const sta = busStationsMap.get(stationId)
-                    console.log(`indirect ${sta.i} ${sta.n}`)
-                  } else {
-                    console.error("station not found", stationId)
-                  }
-                })
-              })
-            }
-          }
-        })
-
-        if (!targetFound) {
-          toast.add({
-            severity: 'error',
-            summary: 'Route not found',
-            detail: `${selectedStartStation.value.n} to ${selectedDestinationStation.value.n} is not possible`,
-            life: 3000
-          })
-        }
-      }, () => {
-        toast.add({severity: 'error', summary: 'Error loading indirect pathfinding', life: 3000})
-        loadingInProgress.value = false
-      })
-    }
-
-  }, () => {
-    toast.add({severity: 'error', summary: 'Error loading pathfinding', life: 3000})
-    loadingInProgress.value = false
-  })
+  //await loadPathFinder()
 })
 
 const getUpperDrawerVisible = computed({
@@ -373,7 +559,7 @@ const adjustLowerDrawerHeight = () => {
 
     <MetroBusses/>
 
-    <TerminalChooser/>
+    <TerminalChooser @selectStation="onSelectStation"/>
   </div>
 
   <Dialog :visible="loadingInProgress" modal :draggable="false" :closable="false"

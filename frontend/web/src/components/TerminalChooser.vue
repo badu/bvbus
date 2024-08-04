@@ -3,40 +3,11 @@ import {inject} from "vue"
 
 const terminalChooserVisible = inject('terminalChooserVisible')
 const terminalsList = inject('terminalsList')
-const selectedStartStation = inject('selectedStartStation')
-const selectedDestinationStation = inject('selectedDestinationStation')
-const busStationsMap = inject('busStationsMap')
 const currentTerminal = inject('currentTerminal')
-const toast = inject('toast')
+const emit = defineEmits(['selectStation'])
 
 const onChosenTerminal = (event) => {
-  console.log('selected station id in terminal',event.data.i)
-  if (busStationsMap.has(event.data.i)) {
-    const selectedStation = busStationsMap.get(event.data.i)
-    if (selectedStartStation.value === null) {
-      selectedStartStation.value = selectedStation
-      selectedStartStation.value.busses = []
-    } else if (selectedDestinationStation.value === null) {
-      selectedDestinationStation.value = selectedStation
-      selectedDestinationStation.value.busses = []
-    } else {
-      toast.add({
-        severity: 'error',
-        summary: "Terminal chooser has both start and destination stations",
-        detail: `${selectedStartStation.value.n} to ${selectedDestinationStation.value.n} but got ${selectedStation.n}`,
-        life: 3000
-      })
-    }
-    terminalChooserVisible.value = false
-  } else {
-    toast.add({
-      severity: 'error',
-      summary: "Error finding station",
-      detail: `station id ${event.data}`,
-      life: 3000
-    })
-    console.error('station not found?', event.data)
-  }
+  emit('selectStation', {stationId: event.data.i})
 }
 </script>
 

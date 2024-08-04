@@ -26,7 +26,7 @@ const maxZoom = inject('maxZoom')
 const busStations = inject('busStations')
 const loadingInProgress = inject('loadingInProgress')
 const terminalsMap = inject('terminalsMap')
-const terminals = inject('terminalsData')
+const terminalsData = inject('terminalsData')
 const toast = inject('toast')
 const selectedStartStation = inject('selectedStartStation')
 const selectedDestinationStation = inject('selectedDestinationStation')
@@ -121,6 +121,15 @@ const trajectorySource = new VectorSource()
 const trajectoryLayer = new VectorImage({
   source: trajectorySource,
   style: function (feature, resolution) {
+    if (feature['color']) {
+      return new FlowLine({
+        color: feature['color'],
+        color2: feature['color'],
+        width: 6,
+        width2: 6,
+        arrow: 1,
+      })
+    }
     return trajectoryStyle
   }
 })
@@ -147,7 +156,7 @@ const flashMarker = (map, marker) => {
       unByKey(listenerKey)
       clusterLayer.un('postrender', animate)
       console.log('selected station id', marker.getId())
-      emit('selectStation', {featureId: marker.getId()})
+      emit('selectStation', {stationId: marker.getId()})
       return
     }
     const vectorContext = getVectorContext(event)
@@ -166,6 +175,7 @@ const flashMarker = (map, marker) => {
   listenerKey = clusterLayer.on('postrender', animate)
 }
 
+const graphLines = []
 onMounted(async () => {
   let initDone = false
 
@@ -180,12 +190,13 @@ onMounted(async () => {
     }
   })
 
-  for (let i = 0; i < terminals.length; i++) {
-    const marker = new Feature({geometry: terminals[i].point})
-    marker.set('stationName', terminals[i].n)
-    marker.set('stationStreet', terminals[i].s)
+  for (let i = 0; i < terminalsData.length; i++) {
+    //console.log(`declared terminal ${terminalsData[i].n}`)
+    const marker = new Feature({geometry: terminalsData[i].point})
+    marker.set('stationName', terminalsData[i].n)
+    marker.set('stationStreet', terminalsData[i].s)
     marker.set('isTerminal', true)
-    marker.setId(terminals[i].i)
+    marker.setId(terminalsData[i].i)
     stationMarkers.push(marker)
   }
 
@@ -230,30 +241,34 @@ onMounted(async () => {
             if (markerIndex < 0) {
               return
             }
+            const featureId = feature.getId()
+
             if (feature.get('isTerminal')) {
-              for (let i = 0; i < terminals.length; i++) {
-                if (terminals[i].i === feature.getId()) {
-                  console.log('selected terminal id', terminals[i].i)
-                  emit('terminalChooser', {terminal: terminals[i]})
+              for (let i = 0; i < terminalsData.length; i++) {
+                if (terminalsData[i].i === featureId) {
+                  emit('terminalChooser', {terminal: terminalsData[i]})
                   break
                 }
               }
               return
             }
-            const featureId = feature.getId()
+
             if (selectedStartStation.value !== null && selectedStartStation.value.i === featureId) {
               emit('deselectStartStation', {featureId: featureId})
               return
             }
+
             if (selectedDestinationStation.value !== null && selectedDestinationStation.value.i === featureId) {
               emit('deselectEndStation', {featureId: featureId})
               return
             }
+
             view.animate({
               center: stationMarkers[markerIndex].getGeometry().getCoordinates(),
               duration: 1000,
               zoom: maxZoom.value
             })
+
             flashMarker(map, feature)
             break
           case 0:
@@ -266,6 +281,10 @@ onMounted(async () => {
         }
       } else {
         map.forEachFeatureAtPixel(e.pixel, function (feature) {
+          const graphIndex = graphLines.indexOf(feature)
+          if (graphIndex >= 0) {
+            console.log('busses', feature['busses'])
+          }
           const markerIndex = stationMarkers.indexOf(feature)
           if (markerIndex < 0) {
             return
@@ -314,10 +333,32 @@ const displayTrajectory = (data, color) => {
       currentCoords.push(fromLonLat([data[i].ln, data[i].lt]))
     }
   }
-
 }
 
-defineExpose({displayTrajectory})
+const displayGraph = (data) => {
+  const nodesMap = new Map()
+  data.nodes.forEach((node) => {
+    nodesMap.set(node.id, fromLonLat([node.ln, node.lt]))
+  })
+
+  data.edges.forEach((edge) => {
+    const fromCoords = nodesMap.get(edge.f)
+    const toCoords = nodesMap.get(edge.t)
+    const lineFeature = new Feature({geometry: new LineString([fromCoords, toCoords])})
+    lineFeature.setId(`${edge.f}-${edge.t}`)
+    if (edge.b) {
+      lineFeature['busses'] = edge.b.split(',')
+    }
+    if (edge.c) {
+      lineFeature['color'] = edge.c
+    }
+    graphLines.push(lineFeature)
+  })
+
+  trajectorySource.addFeatures(graphLines)
+}
+
+defineExpose({displayTrajectory, displayGraph})
 </script>
 <style scoped>
 #map {

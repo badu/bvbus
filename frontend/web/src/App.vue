@@ -6,7 +6,7 @@ import {service} from "@/service/index.js"
 
 const toast = useToast()
 const {loadStationTimetables, loadBusPoints, loadDirectPathFinder,loadIndirectPathFinder} = service(toast)
-const models = store(toast)
+const models = store()
 
 provide('toast', toast)
 provide('loadBusPoints', loadBusPoints)
