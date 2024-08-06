@@ -14,12 +14,10 @@ const loadStationTimetables = inject('loadStationTimetables')
 const loadDirectPathFinder = inject('loadDirectPathFinder')
 const loadBusPoints = inject('loadBusPoints')
 const bussesListVisible = inject('bussesListVisible')
-const metroBussesListVisible = inject('metroBussesListVisible')
 const timetableVisible = inject('timetableVisible')
 const buslineVisible = inject('buslineVisible')
 const selectedBusLine = inject('selectedBusLine')
 const loadingInProgress = inject('loadingInProgress')
-const userLocation = inject('userLocation')
 const pathfinderMode = inject('pathfinderMode')
 const terminalChooserVisible = inject('terminalChooserVisible')
 const terminalsList = inject('terminalsList')
@@ -58,14 +56,15 @@ const items = ref([
     icon: 'pi pi-map-marker',
     command: () => {
       const showPosition = async (position) => {
-        userLocation.value = {lat: position.coords.latitude, lon: position.coords.longitude, acc: position.accuracy}
+        const userLocation ={lat: position.coords.latitude, lon: position.coords.longitude, acc: position.accuracy}
         toast.add({
           severity: 'info',
           summary: "Your location was acquired",
-          detail: `Lat ${userLocation.value.lat} Lon ${userLocation.value.lon}`,
+          detail: `Lat ${userLocation.lat} Lon ${userLocation.lon}`,
           life: 3000
         })
-        loadAndDisplayGraph()
+        brasovMap.value.findNearbyMarkers(userLocation)
+        //loadAndDisplayGraph()
       }
 
       const showError = (error) => {
@@ -89,41 +88,35 @@ const items = ref([
     }
   },
   {
-    label: 'Urban Busses',
+    label: 'Busses List',
     icon: 'pi pi-compass',
     command: () => {
       bussesListVisible.value = true
     }
   },
   {
-    label: 'Metropolitan Busses',
-    icon: 'pi pi-external-link',
-    command: () => {
-      metroBussesListVisible.value = true
-    }
-  },
-  {
     label: 'Settings',
     icon: 'pi pi-cog',
     command: async () => {
-      const bus = busLinesMap.get(5390264)
-      if (!bus.points) {
-        loadingInProgress.value = true
-        await loadBusPoints(
-            bus.i,
-            (data) => {
-              bus.points = data
-              loadingInProgress.value = false
-              brasovMap.value.displayTrajectory(bus.points, bus.c)
-            },
-            () => {
-              loadingInProgress.value = false
-              console.error('error loading bus points')
-            })
-      } else {
-        brasovMap.value.displayTrajectory(bus.points, bus.c)
-      }
-
+      /**
+       const bus = busLinesMap.get(5390264)
+       if (!bus.points) {
+       loadingInProgress.value = true
+       await loadBusPoints(
+       bus.i,
+       (data) => {
+       bus.points = data
+       loadingInProgress.value = false
+       brasovMap.value.displayTrajectory(bus.points, bus.c)
+       },
+       () => {
+       loadingInProgress.value = false
+       console.error('error loading bus points')
+       })
+       } else {
+       brasovMap.value.displayTrajectory(bus.points, bus.c)
+       }
+       **/
       toast.add({
         severity: 'error',
         summary: "Settings are not yet implemented",
@@ -297,11 +290,11 @@ const findBestTimes = (stations, finalStation) => {
     console.log(`final drop off bus ${currentBus.n} station ${finalStation.n} ${finalStation.i} arrival ${dropOffTime.time}`)
     currentTime = dropOffTime.minutes
   } else {
-    if (!currentBus.siblingId){
+    if (!currentBus.siblingId) {
       console.error(`current bus has no sibling ${currentBus.i}`)
       return
     }
-    if (!busLinesMap.has(currentBus.siblingId)){
+    if (!busLinesMap.has(currentBus.siblingId)) {
       console.error(`sibling bus not found in the bus lines map ${currentBus.i} ${currentBus.siblingId}`)
       return
     }
@@ -352,7 +345,12 @@ const loadPathFinder = async () => {
       if (busStationsMap.has(stationInfo.t)) {
         const station = busStationsMap.get(stationInfo.t)
         if (station.i === selectedDestinationStation.value.i) {
-          console.log(`direct ${selectedStartStation.value.n} to ${station.n} ${stationInfo.d} meters long ${selectedStartStation.value.i}-${selectedDestinationStation.value.i}`)
+          if (stationInfo.cross) {
+            console.log('just cross the god damn street, ok?')
+            continue
+          }
+
+          console.log(`direct ${selectedStartStation.value.n} to ${station.n} ${stationInfo.d ? stationInfo.d : '0'} meters long ${selectedStartStation.value.i}-${selectedDestinationStation.value.i}`)
           const stations = []
           const promises = []
           const nodes = []
@@ -362,6 +360,9 @@ const loadPathFinder = async () => {
             lt: selectedStartStation.value.lt,
             ln: selectedStartStation.value.ln
           })
+          if (!stationInfo.s) {
+            continue
+          }
           stationInfo.s.forEach((solution) => {
             solution.s.forEach((stationId) => {
               if (busStationsMap.has(stationId)) {
@@ -402,7 +403,6 @@ const loadPathFinder = async () => {
         }
       }
     }
-
 
 
   }, () => {
@@ -556,8 +556,6 @@ const adjustLowerDrawerHeight = () => {
     <BusLine/>
 
     <Busses/>
-
-    <MetroBusses/>
 
     <TerminalChooser @selectStation="onSelectStation"/>
   </div>

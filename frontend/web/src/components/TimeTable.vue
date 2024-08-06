@@ -60,19 +60,19 @@ const onBusNumberClicked = (event) => {
 }
 
 watch(busTable, (newBusTable) => {
-  scrollToFirstValid(displayedTab.value, newBusTable)
+  scrollToFirstValid(selectedDisplay.value, newBusTable)
 })
 
-const displayedTab = ref("Today")
-watch(displayedTab, (newDisplayTab) => {
+const selectedDisplay = ref("Today")
+watch(selectedDisplay, (newDisplayTab) => {
   scrollToFirstValid(newDisplayTab, busTable.value)
 })
 
-const options = ref(['Today', isWeekend ? 'Weekdays' : 'Saturday / Sunday'])
+const displayOptions = ref(['Today', isWeekend ? 'Weekdays' : 'Saturday / Sunday'])
 
 onMounted(() => {
-  if (displayedTab.value !== "Today") {
-    displayedTab.value = "Today"
+  if (selectedDisplay.value !== "Today") {
+    selectedDisplay.value = "Today"
   }
 })
 
@@ -110,8 +110,8 @@ onMounted(() => {
     <template #default>
       <DataTable ref="busTable"
                  v-model:selection="selectedTime"
-                 :value="displayedTab==='Today' ? selectedStartStation.timetable : selectedStartStation.extraTimetable"
-                 :selectionMode="displayedTab==='Today' ? 'single' : null"
+                 :value="selectedDisplay==='Today' ? selectedStartStation.timetable : selectedStartStation.extraTimetable"
+                 :selectionMode="selectedDisplay==='Today' ? 'single' : null"
                  scrollable
                  scrollHeight="flex"
                  @row-select="onTimeSelect"
@@ -119,8 +119,8 @@ onMounted(() => {
 
         <template #header>
           <SelectButton
-              v-model="displayedTab"
-              :options="options"
+              v-model="selectedDisplay"
+              :options="displayOptions"
               aria-labelledby="basic"
               style="display: flex;"/>
         </template>

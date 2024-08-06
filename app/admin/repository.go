@@ -3,6 +3,7 @@ package admin
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sort"
 	"strconv"
@@ -60,6 +61,7 @@ type Station struct {
 	Lon           float64        `json:"ln"`
 	HasBoard      bool           `json:"b,omitempty"`
 	IsOutsideCity bool           `json:"o,omitempty"`
+	IsTerminal    bool           `json:"r,omitempty"`
 	Lines         Lines          `json:"l,omitempty"`
 }
 
@@ -117,10 +119,21 @@ type Busline struct {
 	Color          string    `json:"c"`
 	Dir            int       `json:"d"`
 	Link           string    `json:"w"`
-	IsUrban        bool      `json:"u"`
-	IsMetropolitan bool      `json:"m"`
+	IsUrban        bool      `json:"u,omitempty"`
+	IsMetropolitan bool      `json:"m,omitempty"`
 	WasCrawled     bool      `json:"p"`
 	Stations       []Station `json:"s"`
+}
+
+func (b *Busline) PrintStations() string {
+	var sb strings.Builder
+	for i, station := range b.Stations {
+		if i > 0 {
+			sb.WriteString("->")
+		}
+		sb.WriteString(fmt.Sprintf(" %d.[%d] %q", i+1, station.OSMID, station.Name))
+	}
+	return sb.String()
 }
 
 type Repository struct {

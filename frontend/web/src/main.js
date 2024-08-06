@@ -28,7 +28,6 @@ import App from './App.vue'
 import Map from "@/components/Map.vue"
 import BusLine from "@/components/BusLine.vue"
 import Busses from "@/components/Busses.vue"
-import MetroBusses from "@/components/MetroBusses.vue"
 import TimeTable from "@/components/TimeTable.vue"
 import Marquee from "@/components/Marquee.vue"
 import TerminalChooser from "@/components/TerminalChooser.vue"
@@ -95,7 +94,6 @@ app.component('ToggleButton', ToggleButton)
 app.component('Map', Map)
 app.component('TimeTable', TimeTable)
 app.component('Busses', Busses)
-app.component('MetroBusses', MetroBusses)
 app.component('BusLine', BusLine)
 app.component('TerminalChooser', TerminalChooser)
 app.component('Marquee', Marquee)

@@ -34,7 +34,8 @@ const onChosenTerminal = (event) => {
                 v-for="bus in slotProps.data.busses"
                 :rounded="true"
                 :value="bus.n"
-                :style="'font-family:TheLedDisplaySt;min-width:40px;user-select:none;color:\'#1E232B\';background-color:'+ bus.c"/>
+                :style="{minWidth: '40px', maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc}"
+            />
           </template>
         </Column>
       </DataTable>

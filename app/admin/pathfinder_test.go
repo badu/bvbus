@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 	"sort"
 	"strings"
@@ -35,8 +34,20 @@ func (a ByDistance) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
 type StationsAndDistances struct {
 	Stations  map[int64]*Station
-	Distances map[string]*DistanceAndMinutes
 	Busses    map[int64]*Busline
+	Distances map[string]*DistanceAndMinutes
+	Terminals map[string]*Terminal
+}
+
+type Terminal struct {
+	ID              int64
+	Name            string
+	Stations        []int64
+	StationsMap     map[int64]struct{}
+	Arrivals        int
+	Departures      int
+	ArrivalBusses   []Busline
+	DepartureBusses []Busline
 }
 
 func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDistances, error) {
@@ -85,7 +96,7 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 	stations := make([]*Station, 0)
 	stationsMap := make(map[int64]*Station)
 	uniqueStationNames := make(map[string][]int64)
-	rows, err = db.Query(`SELECT id, name, lat, lng, outside, board FROM stations ORDER BY id;`)
+	rows, err = db.Query(`SELECT id, name, lat, lng, board FROM stations ORDER BY id;`)
 	if err != nil {
 		logger.Error("error querying stations", "err", err)
 		return nil, err
@@ -98,7 +109,6 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 			&station.Name,
 			&station.Lat,
 			&station.Lon,
-			&station.IsOutsideCity,
 			&station.HasBoard,
 		)
 		if err != nil {
@@ -182,6 +192,80 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 		}
 	}
 	rows.Close()
+
+	terminalsMap := make(map[string]*Terminal)
+	for _, bus := range busses {
+		firstTerminalID := bus.Stations[0].OSMID
+		firstTerminalName := bus.Stations[0].Name
+		if _, has := terminalsMap[firstTerminalName]; !has {
+			terminalsMap[firstTerminalName] = &Terminal{
+				ID:              firstTerminalID,
+				Name:            firstTerminalName,
+				Stations:        make([]int64, 0),
+				StationsMap:     make(map[int64]struct{}),
+				DepartureBusses: make([]Busline, 0),
+			}
+		}
+		if _, has := terminalsMap[firstTerminalName].StationsMap[firstTerminalID]; !has {
+			terminalsMap[firstTerminalName].Stations = append(terminalsMap[firstTerminalName].Stations, firstTerminalID)
+			terminalsMap[firstTerminalName].StationsMap[firstTerminalID] = struct{}{}
+		}
+
+		if _, found := stationsMap[firstTerminalID]; found {
+			stationsMap[firstTerminalID].IsTerminal = true
+		} else {
+			logger.Error("error looking up station", "id", firstTerminalID)
+		}
+
+		terminalsMap[firstTerminalName].Departures++
+		terminalsMap[firstTerminalName].DepartureBusses = append(terminalsMap[firstTerminalName].DepartureBusses, Busline{OSMID: bus.OSMID, Line: bus.Line})
+
+		secondTerminalName := bus.Stations[len(bus.Stations)-1].Name
+		secondTerminalID := bus.Stations[len(bus.Stations)-1].OSMID
+		if _, has := terminalsMap[secondTerminalName]; !has {
+			terminalsMap[secondTerminalName] = &Terminal{
+				ID:            secondTerminalID,
+				Name:          secondTerminalName,
+				Stations:      make([]int64, 0),
+				StationsMap:   make(map[int64]struct{}),
+				ArrivalBusses: make([]Busline, 0),
+			}
+		}
+		if _, has := terminalsMap[secondTerminalName].StationsMap[secondTerminalID]; !has {
+			terminalsMap[secondTerminalName].Stations = append(terminalsMap[secondTerminalName].Stations, secondTerminalID)
+			terminalsMap[secondTerminalName].StationsMap[secondTerminalID] = struct{}{}
+		}
+
+		if _, found := stationsMap[secondTerminalID]; found {
+			stationsMap[secondTerminalID].IsTerminal = true
+		} else {
+			logger.Error("error looking up station", "id", secondTerminalID)
+		}
+
+		terminalsMap[secondTerminalName].Arrivals++
+		terminalsMap[secondTerminalName].ArrivalBusses = append(terminalsMap[secondTerminalName].ArrivalBusses, Busline{OSMID: bus.OSMID, Line: bus.Line})
+	}
+
+	for stationName, terminalInfo := range terminalsMap {
+		var sb strings.Builder
+		sb.WriteString("arrivals")
+		for index, arrival := range terminalInfo.ArrivalBusses {
+			if index > 0 {
+				sb.WriteRune(',')
+			}
+			sb.WriteString(fmt.Sprintf("%q", arrival.Line))
+		}
+		sb.WriteRune(' ')
+		sb.WriteString("departures")
+		for index, departure := range terminalInfo.DepartureBusses {
+			if index > 0 {
+				sb.WriteRune(',')
+			}
+			sb.WriteString(fmt.Sprintf("%q", departure.Line))
+		}
+		_ = stationName
+		// logger.Info("terminal", "name", stationName, "arrivals", terminalInfo.Arrivals, "departures", terminalInfo.Departures, "busses", sb.String())
+	}
 
 	rows, err = db.Query(`SELECT id, lat, lng FROM street_points ORDER BY id;`)
 	if err != nil {
@@ -323,7 +407,7 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*StationsAndDista
 	}
 	rows.Close()
 
-	return &StationsAndDistances{Stations: stationsMap, Distances: mapResult, Busses: bussesMap}, nil
+	return &StationsAndDistances{Stations: stationsMap, Distances: mapResult, Busses: bussesMap, Terminals: terminalsMap}, nil
 }
 
 func TestGenerateDistancesAndTimesBetweenStations(t *testing.T) {
@@ -369,7 +453,7 @@ func TestGenerateDistancesAndTimesBetweenStations(t *testing.T) {
 }
 
 func TestPathFinderWithNum(t *testing.T) {
-	const writeToDisk = false
+	const writeToDisk = true
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -385,56 +469,31 @@ func TestPathFinderWithNum(t *testing.T) {
 	}
 
 	uniqueStationNames := make(map[string][]int64)
-	graph := simple.NewWeightedDirectedGraph(0, math.Inf(1))
-	for stationID, station := range result.Stations {
-		if station.IsOutsideCity {
-			continue
-		}
+	graph := simple.NewDirectedGraph()
+	// add stations as nodes
 
+	for stationID, station := range result.Stations {
 		if _, has := uniqueStationNames[station.Name]; !has {
 			uniqueStationNames[station.Name] = make([]int64, 0)
 		}
 
 		uniqueStationNames[station.Name] = append(uniqueStationNames[station.Name], stationID)
+
+		if _, isTerminal := result.Terminals[station.Name]; !isTerminal {
+			// skip terminals (will be added once)
+			// logger.Info("adding STATION node", "name", station.Name, "id", station.OSMID)
+			graph.AddNode(station)
+		}
+	}
+
+	for _, terminalInfo := range result.Terminals {
+		terminalID := terminalInfo.ID
+		station, _ := result.Stations[terminalID]
+		// logger.Info("adding TERMINAL node", "name", station.Name, "id", terminalID)
 		graph.AddNode(station)
 	}
 
 	seen := make(map[string]string)
-	for _, measurement := range result.Distances {
-		if graph.HasEdgeFromTo(measurement.FromStationID, measurement.ToStationID) {
-			if len(seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)]) > 0 {
-				seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)] += ","
-			}
-			seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)] += result.Busses[measurement.ForBusID].Line
-			continue
-		}
-
-		if len(measurement.Key) == 0 {
-			logger.Error("ERROR EMPTY KEY")
-		}
-
-		if _, has := seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)]; has {
-			logger.Error("ERROR HAS SEEN", "key", measurement.Key)
-		}
-
-		startStation, startFound := result.Stations[measurement.FromStationID]
-		if !startFound {
-			t.Fatalf("error finding start station %d", measurement.FromStationID)
-		}
-
-		endStation, endFound := result.Stations[measurement.ToStationID]
-		if !endFound {
-			t.Fatalf("error finding end station %d", measurement.ToStationID)
-		}
-
-		if measurement.Meters == 0 {
-			logger.Error("ERROR : zero meters")
-		}
-
-		graph.SetWeightedEdge(simple.WeightedEdge{F: startStation, T: endStation, W: float64(measurement.Meters)})
-
-		seen[fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)] = result.Busses[measurement.ForBusID].Line
-	}
 
 	for _, bus := range result.Busses {
 		if bus.IsMetropolitan {
@@ -446,47 +505,82 @@ func TestPathFinderWithNum(t *testing.T) {
 				continue
 			}
 
-			startStation := bus.Stations[index]
-			destinationStation := bus.Stations[index+1]
+			startStation, startFound := result.Stations[bus.Stations[index].OSMID]
+			if !startFound {
+				t.Fatalf("error finding start station %d", bus.Stations[index].OSMID)
+			}
 
-			if !graph.HasEdgeFromTo(startStation.OSMID, destinationStation.OSMID) {
-				key := fmt.Sprintf("%d-%d-%d", startStation.OSMID, destinationStation.OSMID, bus.OSMID)
+			endStation, endFound := result.Stations[bus.Stations[index+1].OSMID]
+			if !endFound {
+				t.Fatalf("error finding end station %d", bus.Stations[index+1].OSMID)
+			}
 
-				if _, has := result.Distances[key]; has {
-					logger.Error("ERROR NOT ADDED EDGE BETWEEN", "from", startStation.Name, "to", destinationStation.Name, "bus", bus.Line)
-				} else {
-					logger.Error("ERROR MISSING EDGE BETWEEN", "from", startStation.Name, "to", destinationStation.Name, "bus", bus.Line)
+			// check replacements with terminals, so we have a single node instead of many stations with a lot of edges between
+			_, replaceStartWithTerminal := result.Terminals[startStation.Name]
+			if replaceStartWithTerminal {
+				terminal, terminalFound := result.Terminals[bus.Stations[index].Name]
+				if !terminalFound {
+					t.Fatalf("error finding terminal for station %q", bus.Stations[index].Name)
+				}
+				startStation, startFound = result.Stations[terminal.ID]
+				if !startFound {
+					t.Fatalf("error finding start station %d", bus.Stations[index].OSMID)
 				}
 			}
+
+			_, replaceEndWithTerminal := result.Terminals[endStation.Name]
+			if replaceEndWithTerminal {
+				terminal, terminalFound := result.Terminals[bus.Stations[index+1].Name]
+				if !terminalFound {
+					t.Fatalf("error finding terminal for station %q", bus.Stations[index+1].Name)
+				}
+				endStation, endFound = result.Stations[terminal.ID]
+				if !endFound {
+					t.Fatalf("error finding end station %d", bus.Stations[index+1].OSMID)
+				}
+			}
+
+			seenKey := fmt.Sprintf("%d-%d", startStation.OSMID, endStation.OSMID)
+			if _, hasSeen := seen[seenKey]; !hasSeen {
+				seen[seenKey] = ""
+			}
+
+			if len(seen[seenKey]) > 0 {
+				seen[seenKey] += ","
+			}
+
+			seen[seenKey] += bus.Line
+			graph.SetEdge(simple.Edge{F: startStation, T: endStation})
 		}
 	}
 
 	// add edges for stations with the same name (crossings)
-	for _, stationsIDs := range uniqueStationNames {
-		for i := 0; i < len(stationsIDs); i++ {
-			sourceStation, _ := result.Stations[stationsIDs[i]]
-			for j := 0; j < len(stationsIDs); j++ {
-				if graph.HasEdgeFromTo(stationsIDs[i], stationsIDs[j]) {
-					continue
+	/**
+		for _, stationsIDs := range uniqueStationNames {
+			for i := 0; i < len(stationsIDs); i++ {
+				sourceStation, _ := result.Stations[stationsIDs[i]]
+				for j := 0; j < len(stationsIDs); j++ {
+					if graph.HasEdgeFromTo(stationsIDs[i], stationsIDs[j]) {
+						continue
+					}
+
+					if i == j {
+						continue
+					}
+
+					targetStation, _ := result.Stations[stationsIDs[j]]
+					if graph.HasEdgeFromTo(sourceStation.OSMID, targetStation.OSMID) {
+						logger.Warn("edge exists (crossing)", "first", sourceStation.OSMID, "second", targetStation.OSMID)
+						continue
+					}
+
+					// logger.Info("adding 100m edge between", "from", sourceStation.Name, "to", targetStation.Name, "fid", sourceStation.OSMID, "tid", targetStation.OSMID)
+					graph.SetWeightedEdge(simple.WeightedEdge{F: sourceStation, T: targetStation, W: 100})
+
 				}
-
-				if i == j {
-					continue
-				}
-
-				targetStation, _ := result.Stations[stationsIDs[j]]
-				if graph.HasEdgeFromTo(sourceStation.OSMID, targetStation.OSMID) {
-					logger.Warn("edge exists (crossing)", "first", sourceStation.OSMID, "second", targetStation.OSMID)
-					continue
-				}
-
-				// logger.Info("adding 100m edge between", "from", sourceStation.Name, "to", targetStation.Name, "fid", sourceStation.OSMID, "tid", targetStation.OSMID)
-				graph.SetWeightedEdge(simple.WeightedEdge{F: sourceStation, T: targetStation, W: 100})
-
 			}
 		}
-	}
-
+	**/
 	result.Distances = nil // free up some RAM
 
 	var graphSb strings.Builder
@@ -503,7 +597,8 @@ func TestPathFinderWithNum(t *testing.T) {
 		if q > 0 {
 			graphSb.WriteRune(',')
 		}
-		graphSb.WriteString(fmt.Sprintf("{%q:%d,%q:%.08f,%q:%.08f}", "id", station.OSMID, "lt", station.Lat, "ln", station.Lon))
+
+		graphSb.WriteString(fmt.Sprintf("{%q:%d,%q:%.08f,%q:%.08f,%q:%q}", "id", station.OSMID, "lt", station.Lat, "ln", station.Lon, "n", station.Name))
 		q++
 	}
 	graphSb.WriteRune(']')
@@ -548,17 +643,27 @@ func TestPathFinderWithNum(t *testing.T) {
 		t.Fatalf("error writing graph.json : %#v", err)
 	}
 
-	noSolutions := make(map[int64]int64)
 	count := len(result.Stations)
-	for startStationID, startStation := range result.Stations {
-		if startStation.IsOutsideCity {
-			count--
-			continue
+	for startStationID := range result.Stations {
+		startStation, startStationFound := result.Stations[startStationID]
+		if !startStationFound {
+			t.Fatalf("error looking up start station %d", startStationID)
 		}
 
-		startNode, _ := result.Stations[startStationID]
+		_, replaceStartWithTerminal := result.Terminals[startStation.Name]
+		if replaceStartWithTerminal {
+			terminal, terminalFound := result.Terminals[startStation.Name]
+			if !terminalFound {
+				t.Fatalf("error finding terminal for station %q", startStation.Name)
+			}
+			var endFound bool
+			startStation, endFound = result.Stations[terminal.ID]
+			if !endFound {
+				t.Fatalf("error finding station %d", terminal.ID)
+			}
+		}
 
-		solutions, ok := path.BellmanFordAllFrom(startNode, graph)
+		solutions, ok := path.BellmanFordAllFrom(startStation, graph)
 		if !ok {
 			t.Fatalf("bellman ford error")
 		}
@@ -568,22 +673,28 @@ func TestPathFinderWithNum(t *testing.T) {
 		sb.WriteRune('[')
 		wroteOne := false
 		for endStationID, endStation := range result.Stations {
-			if theID, hasNoSolution := noSolutions[endStationID]; hasNoSolution && theID == startStationID {
-				continue
+			_, replaceEndWithTerminal := result.Terminals[endStation.Name]
+			if replaceEndWithTerminal {
+				terminal, terminalFound := result.Terminals[endStation.Name]
+				if !terminalFound {
+					t.Fatalf("error finding terminal for station %q", endStation.Name)
+				}
+				var endFound bool
+				endStation, endFound = result.Stations[terminal.ID]
+				if !endFound {
+					t.Fatalf("error finding station %d", terminal.ID)
+				}
+
 			}
 
-			if endStation.IsOutsideCity {
-				continue
-			}
-
-			if startStationID == endStationID {
+			if startStation.OSMID == endStation.OSMID {
 				continue
 			}
 
 			willSkip := false
-			if hasSiblings {
+			if !replaceEndWithTerminal && hasSiblings {
 				for _, siblingID := range siblings {
-					if endStationID == siblingID {
+					if endStation.OSMID == siblingID {
 						willSkip = true
 						if wroteOne {
 							sb.WriteRune(',')
@@ -600,10 +711,9 @@ func TestPathFinderWithNum(t *testing.T) {
 				continue
 			}
 
-			allPaths, weight := solutions.AllTo(endStationID)
+			allPaths, _ := solutions.AllTo(endStation.OSMID)
 			if len(allPaths) == 0 {
-				// logger.Warn("NO SOLUTION", "from", startNode.Name, "to", endStation.Name, "fid", startStationID, "did", endStationID)
-				noSolutions[startStationID] = endStationID
+				// logger.Warn("NO SOLUTION", "from", startStation.Name, "to", endStation.Name, "fid", startStationID, "did", endStationID)
 				continue
 			}
 
@@ -611,7 +721,7 @@ func TestPathFinderWithNum(t *testing.T) {
 				sb.WriteRune(',')
 			}
 
-			sb.WriteString(fmt.Sprintf("{%q:%d,%q:%.00f,%q:[", "t", endStationID, "d", weight, "s"))
+			sb.WriteString(fmt.Sprintf("{%q:%d,%q:[", "t", endStationID, "s"))
 			wroteOne = true
 			for i, solution := range allPaths {
 				if i > 0 {

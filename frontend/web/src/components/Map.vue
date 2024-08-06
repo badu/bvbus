@@ -16,7 +16,11 @@ import {getVectorContext} from "ol/render"
 import {boundingExtent} from "ol/extent.js"
 import FlowLine from "ol-ext/style/FlowLine.js";
 import {LineString} from "ol/geom.js";
-import {fromLonLat} from "ol/proj.js";
+import {fromLonLat, transform} from "ol/proj.js";
+import {createStringXY} from "ol/coordinate.js";
+import {MousePosition} from "ol/control.js";
+import {toRadians} from "ol/math.js";
+
 
 const emit = defineEmits(['selectStation', 'deselectStartStation', 'deselectEndStation', 'terminalChooser'])
 
@@ -25,7 +29,6 @@ const mapZoom = inject('mapZoom')
 const maxZoom = inject('maxZoom')
 const busStations = inject('busStations')
 const loadingInProgress = inject('loadingInProgress')
-const terminalsMap = inject('terminalsMap')
 const terminalsData = inject('terminalsData')
 const toast = inject('toast')
 const selectedStartStation = inject('selectedStartStation')
@@ -175,26 +178,34 @@ const flashMarker = (map, marker) => {
   listenerKey = clusterLayer.on('postrender', animate)
 }
 
+const stationMarkers = []
 const graphLines = []
+const mousePositionControl = new MousePosition({
+  coordinateFormat: createStringXY(4),
+  projection: 'EPSG:4326',
+})
+
 onMounted(async () => {
   let initDone = false
 
-  const stationMarkers = []
   busStations.value.forEach((station) => {
-    if (!terminalsMap.has(station.i)) {
+    if (!station.isTerminal) {
       const marker = new Feature({geometry: station.point})
       marker.setId(station.i)
       marker.set('stationName', station.n)
       marker.set('stationStreet', station.s)
+      marker.set('lat', station.lt)
+      marker.set('lon', station.ln)
       stationMarkers.push(marker)
     }
   })
 
   for (let i = 0; i < terminalsData.length; i++) {
-    //console.log(`declared terminal ${terminalsData[i].n}`)
     const marker = new Feature({geometry: terminalsData[i].point})
     marker.set('stationName', terminalsData[i].n)
     marker.set('stationStreet', terminalsData[i].s)
+    marker.set('lat', terminalsData[i].lt)
+    marker.set('lon', terminalsData[i].ln)
     marker.set('isTerminal', true)
     marker.setId(terminalsData[i].i)
     stationMarkers.push(marker)
@@ -209,6 +220,9 @@ onMounted(async () => {
   map.on('loadstart', function () {
     if (!initDone) {
       map.getControls().clear()
+      if (false) {
+        map.addControl(mousePositionControl)
+      }
     }
     loadingInProgress.value = true
   })
@@ -356,9 +370,42 @@ const displayGraph = (data) => {
   })
 
   trajectorySource.addFeatures(graphLines)
+  clusterLayer.setVisible(false)
 }
 
-defineExpose({displayTrajectory, displayGraph})
+const haversineDistance = ([lat1, lon1], [lat2, lon2], isMiles = false) => {
+  const toRadian = angle => (Math.PI / 180) * angle
+  const distance = (a, b) => (Math.PI / 180) * (a - b)
+  const RADIUS_OF_EARTH_IN_KM = 6371
+
+  const dLat = distance(lat2, lat1)
+  const dLon = distance(lon2, lon1)
+
+  lat1 = toRadian(lat1)
+  lat2 = toRadian(lat2)
+
+  const a = Math.pow(Math.sin(dLat / 2), 2) + Math.pow(Math.sin(dLon / 2), 2) * Math.cos(lat1) * Math.cos(lat2)
+  const c = 2 * Math.asin(Math.sqrt(a))
+
+  let finalDistance = RADIUS_OF_EARTH_IN_KM * c
+
+  if (isMiles) {
+    finalDistance /= 1.60934
+  }
+
+  return finalDistance
+}
+
+const findNearbyMarkers = (userPosition) => {
+  const nearbyMarkers = stationMarkers.filter(marker => {
+    return haversineDistance([userPosition.lat, userPosition.lon], [marker.get('lat'),marker.get('lon')]) < 0.5// 500m
+  })
+  console.log('User\'s position:', userPosition)
+  console.log('Nearby markers:', nearbyMarkers)
+}
+
+
+defineExpose({displayTrajectory, displayGraph, findNearbyMarkers})
 </script>
 <style scoped>
 #map {
