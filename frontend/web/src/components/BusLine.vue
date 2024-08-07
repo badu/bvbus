@@ -88,8 +88,6 @@ const onStationClicked = (event, data) => {
 <template>
   <Drawer
       v-model:visible="buslineVisible"
-      position="full"
-      :showCloseIcon="true"
       style="background-color: #1E232B">
 
     <template #header>

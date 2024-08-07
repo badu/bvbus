@@ -5,14 +5,12 @@ import {store} from "@/store/index.js"
 import {service} from "@/service/index.js"
 
 const toast = useToast()
-const {loadStationTimetables, loadBusPoints, loadDirectPathFinder,loadIndirectPathFinder} = service(toast)
-const models = store()
+const {loadStationTimetables, loadBusPoints, loadDirectPathFinder} = service(toast)
+const models = store(loadStationTimetables, loadDirectPathFinder)
 
 provide('toast', toast)
 provide('loadBusPoints', loadBusPoints)
 provide('loadStationTimetables', loadStationTimetables)
-provide('loadDirectPathFinder', loadDirectPathFinder)
-provide('loadIndirectPathFinder', loadIndirectPathFinder)
 for (const key in models) {
   provide(key, models[key])
 }

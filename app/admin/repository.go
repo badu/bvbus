@@ -61,7 +61,7 @@ type Station struct {
 	Lon           float64        `json:"ln"`
 	HasBoard      bool           `json:"b,omitempty"`
 	IsOutsideCity bool           `json:"o,omitempty"`
-	IsTerminal    bool           `json:"r,omitempty"`
+	IsTerminal    bool           `json:"t,omitempty"`
 	Lines         Lines          `json:"l,omitempty"`
 }
 

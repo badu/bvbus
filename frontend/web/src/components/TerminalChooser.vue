@@ -7,6 +7,7 @@ const currentTerminal = inject('currentTerminal')
 const emit = defineEmits(['selectStation'])
 
 const onChosenTerminal = (event) => {
+  console.log('terminal chosen',event.data.i)
   emit('selectStation', {stationId: event.data.i})
 }
 </script>
@@ -14,8 +15,6 @@ const onChosenTerminal = (event) => {
 <template>
   <Drawer
       v-model:visible="terminalChooserVisible"
-      position="full"
-      :showCloseIcon="true"
       style="background-color: #1E232B">
     <template #header>
       Terminal {{ currentTerminal.n }}

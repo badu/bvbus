@@ -7,7 +7,7 @@ const selectedTime = inject('selectedTime')
 const isWeekend = inject('isWeekend')
 const toast = inject('toast')
 
-const emit = defineEmits(['selectTime'])
+const emit = defineEmits(['selectTime', 'drawerClosed'])
 
 let busTable = ref(null)
 
@@ -76,35 +76,41 @@ onMounted(() => {
   }
 })
 
+const emitDrawerClose = () => {
+  emit('drawerClosed')
+}
 </script>
 
 <template>
   <Drawer
       v-model:visible="timetableVisible"
-      position="full"
-      :showCloseIcon="true"
+      @hide="emitDrawerClose"
       style="background-color: #1E232B">
 
     <template #header>
-      <Tag>
-        <div class="flex items-center gap-2 px-1" style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;flex-direction: row;">
+      <div style="width: 100%;display:flex;">
+      <Tag >
+        <div class="flex items-center gap-2 px-1"
+             style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;flex-direction: row;">
           <img src="/svgs/bus_stop_shelter.svg" style="height: 30px;width: 30px;"/>
         </div>
       </Tag>
 
-      <h2 style="color: #FED053;user-select: none;">{{ selectedStartStation.isTerminal ? 'Terminal' : 'Station' }} {{ selectedStartStation.n }}</h2>
+      <h2 style="white-space: nowrap;margin-left:10px;margin-right:10px;color: #FED053;user-select: none;">{{ selectedStartStation.t ? 'Terminal' : 'Station' }}
+        {{ selectedStartStation.n }}</h2>
 
-      <Marquee id="linesInStation">
+      <Marquee id="linesInStation" style="width: 100%">
         <template v-for="bus in selectedStartStation.busses">
           <div style="white-space: nowrap;text-align: center;vertical-align: center;">
-          <Tag
-              :rounded="true"
-              :value="bus.n"
-              :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc }"/>
-          {{ bus.f }} - {{ bus.t }}
+            <Tag
+                :rounded="true"
+                :value="bus.n"
+                :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc }"/>
+            {{ bus.f }} - {{ bus.t }}
           </div>
         </template>
       </Marquee>
+      </div>
     </template>
 
     <template #default>
@@ -122,7 +128,7 @@ onMounted(() => {
               v-model="selectedDisplay"
               :options="displayOptions"
               aria-labelledby="basic"
-              style="display: flex;"/>
+              style="display: flex;width: 100%;"/>
         </template>
 
         <Column header="Bus" style="color: #FED053;user-select: none;">

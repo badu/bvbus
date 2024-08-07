@@ -18,8 +18,6 @@ const selectedDisplay = ref("Urban")
 <template>
   <Drawer
       v-model:visible="bussesListVisible"
-      position="full"
-      :showCloseIcon="true"
       style="background-color: #1E232B">
 
     <template #header>

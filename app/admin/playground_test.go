@@ -908,26 +908,77 @@ func TestGenerateStationsJS(t *testing.T) {
 		t.Fatalf("error reading stations : %#v", err)
 	}
 
+	rows, err := repo.Query(`SELECT bus_id,station_id,station_index FROM bus_stops ORDER BY bus_id,station_index;`)
+	if err != nil {
+		t.Fatalf("error querying bus stops:%#v", err)
+	}
+
+	type Stop struct {
+		stationID    int64
+		stationIndex int
+	}
+
+	busStops := make(map[int64][]Stop)
+	for rows.Next() {
+		var stop Stop
+		var busID int64
+		err := rows.Scan(&busID, &stop.stationID, &stop.stationIndex)
+		if err != nil {
+			t.Fatalf("error scanning:%#v", err)
+		}
+		if _, has := busStops[busID]; !has {
+			busStops[busID] = make([]Stop, 0)
+		}
+		busStops[busID] = append(busStops[busID], stop)
+	}
+	rows.Close()
+
+	terminals := make(map[int64]struct{})
+	for _, stops := range busStops {
+		if _, has := terminals[stops[0].stationID]; !has {
+			terminals[stops[0].stationID] = struct{}{}
+		}
+		if _, has := terminals[stops[len(stops)-1].stationID]; !has {
+			terminals[stops[len(stops)-1].stationID] = struct{}{}
+		}
+	}
+
+	terminalNames := make(map[string]struct{})
+	for _, station := range stations {
+		if _, has := terminals[station.OSMID]; has {
+			if _, hasName := terminalNames[station.Name]; !hasName {
+				terminalNames[station.Name] = struct{}{}
+			}
+		}
+	}
 	var outsideStations strings.Builder
 	var insideStations strings.Builder
 	insideStations.WriteString("const stations = [")
 	outsideStations.WriteString("const metroStations = [")
 	for _, station := range stations {
 		if station.IsOutsideCity {
-			var data string
+			data := fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%.07f,%q:%.07f,%q:true", "i", station.OSMID, "n", station.Name, "s", station.StreetName, "lt", station.Lat, "ln", station.Lon, "o")
 			if station.HasBoard {
-				data = fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%.07f,%q:%.07f,%q:true,%q:true},\n", "i", station.OSMID, "n", station.Name, "s", station.StreetName, "lt", station.Lat, "ln", station.Lon, "b", "o")
-			} else {
-				data = fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%.07f,%q:%.07f,%q:true},\n", "i", station.OSMID, "n", station.Name, "s", station.StreetName, "lt", station.Lat, "ln", station.Lon, "o")
+				data += fmt.Sprintf(",%q:true", "b")
 			}
+			if _, has := terminals[station.OSMID]; has {
+				data += fmt.Sprintf(",%q:true", "t")
+			} else if _, has := terminalNames[station.Name]; has {
+				data += fmt.Sprintf(",%q:true", "t")
+			}
+			data += "},\n"
 			outsideStations.WriteString(data)
 		} else {
-			var data string
+			data := fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%.07f,%q:%.07f", "i", station.OSMID, "n", station.Name, "s", station.StreetName, "lt", station.Lat, "ln", station.Lon)
 			if station.HasBoard {
-				data = fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%.07f,%q:%.07f,%q:true},\n", "i", station.OSMID, "n", station.Name, "s", station.StreetName, "lt", station.Lat, "ln", station.Lon, "b")
-			} else {
-				data = fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%.07f,%q:%.07f},\n", "i", station.OSMID, "n", station.Name, "s", station.StreetName, "lt", station.Lat, "ln", station.Lon)
+				data += fmt.Sprintf(",%q:true", "b")
 			}
+			if _, has := terminals[station.OSMID]; has {
+				data += fmt.Sprintf(",%q:true", "t")
+			} else if _, has := terminalNames[station.Name]; has {
+				data += fmt.Sprintf(",%q:true", "t")
+			}
+			data += "},\n"
 			insideStations.WriteString(data)
 		}
 	}

@@ -15,11 +15,11 @@ import InputText from 'primevue/inputtext'
 import SpeedDial from "primevue/speeddial"
 import DataTable from "primevue/datatable"
 import Column from "primevue/column"
-import Drawer from "primevue/drawer"
+import Drawer from "@/components/Drawer.vue"
 import Dialog from "primevue/dialog"
 import router from './router'
 import Timeline from 'primevue/timeline'
-import SelectButton from 'primevue/selectbutton'
+import SelectButton from '@/components/SelectButton.vue'
 import ToggleButton from 'primevue/togglebutton'
 
 import 'primeicons/primeicons.css'

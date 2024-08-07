@@ -482,7 +482,11 @@ func TestPathFinderWithNum(t *testing.T) {
 		if _, isTerminal := result.Terminals[station.Name]; !isTerminal {
 			// skip terminals (will be added once)
 			// logger.Info("adding STATION node", "name", station.Name, "id", station.OSMID)
-			graph.AddNode(station)
+			if node := graph.Node(station.OSMID); node == nil {
+				graph.AddNode(station)
+			} else {
+				logger.Warn("node exists", "name", station.Name)
+			}
 		}
 	}
 
@@ -490,7 +494,11 @@ func TestPathFinderWithNum(t *testing.T) {
 		terminalID := terminalInfo.ID
 		station, _ := result.Stations[terminalID]
 		// logger.Info("adding TERMINAL node", "name", station.Name, "id", terminalID)
-		graph.AddNode(station)
+		if node := graph.Node(station.OSMID); node == nil {
+			graph.AddNode(station)
+		} else {
+			logger.Warn("node exists", "name", station.Name)
+		}
 	}
 
 	seen := make(map[string]string)
@@ -502,6 +510,11 @@ func TestPathFinderWithNum(t *testing.T) {
 
 		for index := range bus.Stations {
 			if index >= len(bus.Stations)-1 {
+				continue
+			}
+
+			if graph.HasEdgeFromTo(bus.Stations[index].OSMID, bus.Stations[index+1].OSMID) {
+				// t.Logf("graph has edge between %d and %d. skipping", bus.Stations[index].OSMID, bus.Stations[index+1].OSMID)
 				continue
 			}
 
@@ -722,14 +735,14 @@ func TestPathFinderWithNum(t *testing.T) {
 			}
 
 			sb.WriteString(fmt.Sprintf("{%q:%d,%q:[", "t", endStationID, "s"))
-			wroteOne = true
-			for i, solution := range allPaths {
-				if i > 0 {
-					sb.WriteRune(',')
-				}
 
+			for i, solution := range allPaths {
 				if i > 5 { // take only first 5 solutions
 					break
+				}
+
+				if i > 0 {
+					sb.WriteRune(',')
 				}
 
 				sb.WriteString(fmt.Sprintf("{%q:%d,%q:[", "i", i+1, "s"))
@@ -750,6 +763,7 @@ func TestPathFinderWithNum(t *testing.T) {
 				sb.WriteRune(']')
 				sb.WriteRune('}')
 			}
+			wroteOne = true
 
 			sb.WriteRune(']')
 			sb.WriteRune('}')
