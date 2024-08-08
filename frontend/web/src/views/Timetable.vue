@@ -1,13 +1,24 @@
 <script setup>
-import {inject, onMounted, ref, watch} from "vue";
+import {inject, onMounted, ref, watch} from "vue"
+import {useRoute, useRouter} from "vue-router"
+
+const route = useRoute()
+const router = useRouter()
+
+const loadingInProgress = inject('loadingInProgress')
 
 const selectedStartStation = inject('selectedStartStation')
-const timetableVisible = inject('timetableVisible')
+const selectedDestinationStation = inject('selectedDestinationStation')
+const metroBusStationsMap = inject('metroBusStationsMap')
+const busStationsMap = inject('busStationsMap')
+
+const loadStationTimetables = inject('loadStationTimetables')
+const processTimetables = inject('processTimetables')
+
 const selectedTime = inject('selectedTime')
 const isWeekend = inject('isWeekend')
 const toast = inject('toast')
-
-const emit = defineEmits(['selectTime', 'drawerClosed'])
+const visible = ref(false)
 
 let busTable = ref(null)
 
@@ -51,7 +62,8 @@ const onTimeSelect = (event) => {
     return
   }
   toast.add({severity: 'info', summary: 'Time Selected', detail: event.data, life: 3000})
-  emit('selectTime', {selectedTime: selectedTime.value})
+  const stationId = parseInt(route.params.stationId)
+  router.push({name: "main", query: {startStation: stationId, selectedTime: selectedTime.value}})
 }
 
 const onBusNumberClicked = (event) => {
@@ -70,46 +82,89 @@ watch(selectedDisplay, (newDisplayTab) => {
 
 const displayOptions = ref(['Today', isWeekend ? 'Weekdays' : 'Saturday / Sunday'])
 
-onMounted(() => {
+onMounted(async () => {
+  const stationId = parseInt(route.params.stationId)
+  let targetStation
+  // check if we know the station
+  if (busStationsMap.has(stationId)) {
+    targetStation = busStationsMap.get(stationId)
+  } else if (metroBusStationsMap.has(stationId)) {
+    targetStation = metroBusStationsMap.get(stationId)
+  } else {
+    console.error(`${stationId} station not found in the busStationsMap and metroBusStationsMap`)
+    return
+  }
+
+  if (!targetStation) {
+    console.error("targetStation is null")
+    return
+  }
+
+  console.log('on select station', targetStation)
+  if (selectedStartStation.value === null) {
+    selectedStartStation.value = targetStation
+
+    if (!selectedStartStation.value.timetable) {
+      console.log('loading time table', stationId)
+      loadingInProgress.value = true
+      await loadStationTimetables(stationId, selectedStartStation.value, processTimetables, () => {
+        console.error('error loading time tables', stationId)
+        toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
+        loadingInProgress.value = false
+      })
+      console.log('timetable loaded', stationId)
+      loadingInProgress.value = false
+      if (!selectedDestinationStation.value) {
+        visible.value = true
+      }
+    } else {
+      if (!selectedDestinationStation.value) {
+        visible.value = true
+      }
+    }
+  }
+
   if (selectedDisplay.value !== "Today") {
     selectedDisplay.value = "Today"
   }
 })
 
-const emitDrawerClose = () => {
-  emit('drawerClosed')
+const onDrawerClose = () => {
+  const stationId = parseInt(route.params.stationId)
+  router.push({name: "main", query: {startStation: stationId}})
 }
 </script>
 
 <template>
   <Drawer
-      v-model:visible="timetableVisible"
-      @hide="emitDrawerClose"
+      v-model:visible="visible"
+      @hide="onDrawerClose"
       style="background-color: #1E232B">
 
     <template #header>
       <div style="width: 100%;display:flex;">
-      <Tag >
-        <div class="flex items-center gap-2 px-1"
-             style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;flex-direction: row;">
-          <img src="/svgs/bus_stop_shelter.svg" style="height: 30px;width: 30px;"/>
-        </div>
-      </Tag>
-
-      <h2 style="white-space: nowrap;margin-left:10px;margin-right:10px;color: #FED053;user-select: none;">{{ selectedStartStation.t ? 'Terminal' : 'Station' }}
-        {{ selectedStartStation.n }}</h2>
-
-      <Marquee id="linesInStation" style="width: 100%">
-        <template v-for="bus in selectedStartStation.busses">
-          <div style="white-space: nowrap;text-align: center;vertical-align: center;">
-            <Tag
-                :rounded="true"
-                :value="bus.n"
-                :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc }"/>
-            {{ bus.f }} - {{ bus.t }}
+        <Tag>
+          <div class="flex items-center gap-2 px-1"
+               style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;flex-direction: row;">
+            <img src="/svgs/bus_stop_shelter.svg" style="height: 30px;width: 30px;"/>
           </div>
-        </template>
-      </Marquee>
+        </Tag>
+
+        <h2 style="white-space: nowrap;margin-left:10px;margin-right:10px;color: #FED053;user-select: none;">
+          {{ selectedStartStation.t ? 'Terminal' : 'Station' }}
+          {{ selectedStartStation.n }}</h2>
+
+        <Marquee id="linesInStation" style="width: 100%">
+          <template v-for="bus in selectedStartStation.busses">
+            <div style="white-space: nowrap;text-align: center;vertical-align: center;">
+              <Tag
+                  :rounded="true"
+                  :value="bus.n"
+                  :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc }"/>
+              {{ bus.f }} - {{ bus.t }}
+            </div>
+          </template>
+        </Marquee>
       </div>
     </template>
 

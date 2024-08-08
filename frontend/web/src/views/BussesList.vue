@@ -1,27 +1,28 @@
 <script setup>
+import {useRouter} from "vue-router";
 import {inject, ref} from "vue";
 
-const bussesListVisible = inject('bussesListVisible')
+const router = useRouter()
 const busLines = inject('busLines')
 const metroBusLines = inject('metroBusLines')
-const selectedBusLine = inject('selectedBusLine')
-
-const onBusSelect = (event) => {
-  console.log('selected bus line id',event.data.i)
-  selectedBusLine.value = event.data
-}
-
+const selectedBusLine = ref(null)
 const displayOptions = ref(['Urban', 'Metropolitan'])
 const selectedDisplay = ref("Urban")
+
+const onBusSelect = (event) => {
+  router.push(`/busses/${event.data.i}`)
+}
+const visible = ref(true)
 </script>
 
 <template>
   <Drawer
-      v-model:visible="bussesListVisible"
+      v-model:visible="visible"
       style="background-color: #1E232B">
 
     <template #header>
-      <h2 style="color: #FED053;user-select: none;">{{selectedDisplay === 'Urban' ? 'Urban Bus Lines' : 'Metropolitan Bus Lines'}}</h2>
+      <h2 style="color: #FED053;user-select: none;">
+        {{ selectedDisplay === 'Urban' ? 'Urban Bus Lines' : 'Metropolitan Bus Lines' }}</h2>
     </template>
 
     <DataTable v-model:selection="selectedBusLine"
@@ -52,7 +53,3 @@ const selectedDisplay = ref("Urban")
 
   </Drawer>
 </template>
-
-<style scoped>
-
-</style>

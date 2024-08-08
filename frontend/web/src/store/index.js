@@ -3,7 +3,7 @@ import urban_busses from "@/urban_busses.js"
 import metro_stations from "@/metro_stations.js"
 import metro_busses from "@/metro_busses.js"
 import distances from "@/distances.js"
-import {ref, watch} from "vue";
+import {ref} from "vue";
 import {fromLonLat} from "ol/proj.js"
 import {Point} from "ol/geom.js"
 
@@ -67,6 +67,7 @@ const metroBusStationsMap = new Map()
 const busLinesMap = new Map()
 const busStationsMap = new Map()
 const bussesInStations = new Map()// map of array
+const streetPoints = new Map()
 
 const minLat = 45.52711580
 const minLon = 25.50356420
@@ -79,19 +80,13 @@ const maxZoom = ref(18)
 const today = new Date()
 const isWeekend = (today.getDay() === 6) || (today.getDay() === 0)
 
-const selectedBusLine = ref(null)
 const selectedStartStation = ref(null)
 const selectedDestinationStation = ref(null)
 const currentTerminal = ref(null)
 const travelRoute = ref(null)
 
 const selectedTime = ref(null)
-const timetableVisible = ref(false)
-const buslineVisible = ref(false)
-const bussesListVisible = ref(false)
-const pathfinderMode = ref(false)
 const loadingInProgress = ref(false)
-const terminalChooserVisible = ref(false)
 
 const terminalsList = ref([])
 const terminalsData = []
@@ -136,15 +131,6 @@ for (let i = 0; i < metro_busses.length; i++) {
     metroBusLinesMap.set(metro_busses[i].i, metro_busses[i])
 }
 
-// setup sibling ids (used in pathfinder mode)
-metroBusLinesMap.forEach((busLine1, key, map) => {
-    metroBusLinesMap.forEach((busLine2, key, map) => {
-        if (busLine1.n === busLine2.n && busLine1.i !== busLine2.i) {
-            busLine1.siblingId = busLine2.i
-        }
-    })
-})
-
 // process urban bus lines
 for (let i = 0; i < urban_busses.length; i++) {
     urban_busses[i].tc = calculateBackgroundColor(urban_busses[i].c) > 155 ? '#1E232B' : '#FED053'
@@ -183,15 +169,6 @@ for (let i = 0; i < urban_busses.length; i++) {
     }
     busLinesMap.set(urban_busses[i].i, urban_busses[i])
 }
-
-// setup sibling ids (used in pathfinder mode)
-busLinesMap.forEach((busLine1, key, map) => {
-    busLinesMap.forEach((busLine2, key, map) => {
-        if (busLine1.n === busLine2.n && busLine1.i !== busLine2.i) {
-            busLine1.siblingId = busLine2.i
-        }
-    })
-})
 
 // process metropolitan stations
 for (let i = 0; i < metro_stations.length; i++) {
@@ -262,7 +239,7 @@ for (const [terminalName, terminal] of terminalNames) {
             console.error("choice not found in stations and metropolitan stations where station id =", terminal.stationIds[i])
         }
     }
-    console.log('pushing terminal', terminalName)
+
     terminalsData.push(terminal)
 }
 
@@ -345,276 +322,21 @@ const processTimetables = (data, targetStation) => {
     })
 }
 
-const getNextDepartureTime = (currentTime, timetable, busId) => {
-    for (let time of timetable) {
-        if (busId) {
-            if (time.i === busId) {
-                if (time.minutes >= currentTime) {
-                    return time
-                }
-            }
-        } else {
-            if (time.minutes >= currentTime) {
-                return time
-            }
-        }
-    }
-    return null
-}
-
-const getNextDepartureTimeForBusses = (currentTime, timetable, bussesIds) => {
-    for (let time of timetable) {
-        if (time.minutes >= currentTime && bussesIds.indexOf(time.i) >= 0) {
-            return time
-        }
-    }
-    return null
-}
-
-const getBussesIdsBetweenStations = (startStation, endStation) => {
-    const busses = []
-    busLinesMap.forEach((value, key, map) => {
-        for (let i = 1; i < value.s.length - 1; i++) {
-            if (value.s[i - 1] === startStation && value.s[i] === endStation) {
-                busses.push(value.i)
-            }
-        }
-    })
-    return busses
-}
-
-const findBestTimes = (stations, finalStation) => {
-    const now = new Date()
-    let currentTime = now.getHours() * 60 + now.getMinutes()
-    let currentBus = null
-
-    let nextDepartureTime = getNextDepartureTime(currentTime, stations[0].timetable, currentBus)
-    if (nextDepartureTime === null) {
-        console.error("no bus found at departure time")
-        return
-    } else if (!busLinesMap.has(nextDepartureTime.i)) {
-        console.error("bus not found in map")
-        return
-    }
-
-    const edges = []
-
-    currentBus = busLinesMap.get(nextDepartureTime.i)
-    for (let i = 0; i < stations.length; i++) {
-        let stationIndex = currentBus.s.indexOf(stations[i].i)
-        if (stationIndex < 0) {
-            const dropOffTime = getNextDepartureTime(currentTime, stations[i - 1].timetable, currentBus.i)
-            console.log(`${i} drop off bus ${currentBus.n} station ${stations[i - 1].n} ${stations[i - 1].i} arrival ${dropOffTime.time}`)
-            const bussesIds = getBussesIdsBetweenStations(stations[i - 1].i, stations[i].i)
-            const next = getNextDepartureTimeForBusses(currentTime, stations[i - 1].timetable, bussesIds)
-            if (next !== null) {
-                currentBus = busLinesMap.get(next.i)
-                currentTime = next.minutes
-                console.log(`${i} hop on bus ${currentBus.n} station ${stations[i - 1].n} ${stations[i - 1].i} arrival ${next.time}`)
-            } else {
-                // result is in "extraTimetable"
-                console.error(`${i} no busses found between`, stations[i - 1].n, stations[i].n, stations[i - 1].i, stations[i].i, bussesIds)
-            }
-        }
-
-        nextDepartureTime = getNextDepartureTime(currentTime, stations[i].timetable, currentBus.i)
-        if (nextDepartureTime === null) {
-            console.log(`${i} nextDepartureTime is null`)
-            break
-        }
-
-        if (i > 0) {
-            edges.push({f: stations[i - 1].i, t: stations[i].i, c: currentBus.c})
-        }
-        currentTime = nextDepartureTime.minutes
-        console.log(`${i} bus ${currentBus.n} station ${stations[i].n} ${stations[i].i} arrival ${nextDepartureTime.time}`)
-    }
-
-    edges.push({f: stations[stations.length - 1].i, t: finalStation.i, c: currentBus.c})
-
-    const dropOffTime = getNextDepartureTime(currentTime, finalStation.timetable, currentBus.i)
-    if (dropOffTime !== null) {
-        console.log(`final drop off bus ${currentBus.n} station ${finalStation.n} ${finalStation.i} arrival ${dropOffTime.time}`)
-        currentTime = dropOffTime.minutes
-    } else {
-        if (!currentBus.siblingId) {
-            console.error(`current bus has no sibling ${currentBus.i}`)
-            return
-        }
-        if (!busLinesMap.has(currentBus.siblingId)) {
-            console.error(`sibling bus not found in the bus lines map ${currentBus.i} ${currentBus.siblingId}`)
-            return
-        }
-
-        // ok, it's a terminal, we need to find the sibling bus and the station from which that bus goes
-        const siblingBus = busLinesMap.get(currentBus.siblingId)
-
-        // we have the sibling bus
-        if (siblingBus) {
-            busStationsMap.forEach((value, key, map) => {
-                for (let i = 0; i < value.busses.length; i++) {
-                    if (value.busses[i].i === siblingBus.i && value.n === finalStation.n) {
-                        // we have the sibling station
-                        if (!value.timetable) {
-                            console.error(`timetable is missing for station ${value.n} [${value.i}]`)
-                            break
-                        }
-                        const dropOffTime = getNextDepartureTime(currentTime, value.timetable, siblingBus.i)
-                        if (dropOffTime !== null) {
-                            console.log(`final drop off sibling bus ${currentBus.n} station ${value.n} ${value.i} arrival ${dropOffTime.time}`)
-                            currentTime = dropOffTime.minutes
-                        } else {
-                            console.error("error finding next departure time of the sibling bus", siblingBus.i, finalStation.i)
-                        }
-                        break
-                    }
-                }
-            })
-        } else {
-            console.error("error finding sibling bus")
-        }
-    }
-
-    if (dropOffTime !== null) {
-        const hours = Math.floor(currentTime / 60)
-        const minutes = currentTime - hours * 60
-        console.log('arrival', hours, minutes)
-    }
-
-    return edges
-}
-
-
-watch(selectedBusLine, (newSelectedBusLine) => {
-    bussesListVisible.value = false
-    buslineVisible.value = true
-})
-
-
-export const store = (loadStationTimetables, loadDirectPathFinder) => {
-    watch(selectedStartStation, async () => {
-        if (!selectedStartStation.value) {
-            return
-        }
-
-        if (!selectedStartStation.value.timetable) {
-            console.log('loading time table', selectedStartStation.value.i)
-            loadingInProgress.value = true
-            await loadStationTimetables(selectedStartStation.value.i, selectedStartStation.value, processTimetables, () => {
-                console.error('error loading time tables', selectedStartStation.value.i)
-                toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
-                loadingInProgress.value = false
-            })
-            console.log('timetable loaded', selectedStartStation.value.i)
-            loadingInProgress.value = false
-            if (!selectedDestinationStation.value) {
-                timetableVisible.value = true
-            }
-        } else {
-            if (!selectedDestinationStation.value) {
-                timetableVisible.value = true
-            }
-        }
-    })
-
-
-    const loadPathFinder = async () => {
-        await loadDirectPathFinder(selectedStartStation.value.i, async (data) => {
-
-            for (const stationInfo of data) {
-                if (busStationsMap.has(stationInfo.t)) {
-                    const station = busStationsMap.get(stationInfo.t)
-                    if (station.i === selectedDestinationStation.value.i) {
-                        if (stationInfo.cross) {
-                            console.log('just cross the god damn street, ok?')
-                            continue
-                        }
-
-                        console.log(`direct ${selectedStartStation.value.n} to ${station.n} ${stationInfo.d ? stationInfo.d : '0'} meters long ${selectedStartStation.value.i}-${selectedDestinationStation.value.i}`)
-                        const stations = []
-                        const promises = []
-                        const nodes = []
-                        stations.push(selectedStartStation.value)
-                        nodes.push({
-                            id: selectedStartStation.value.i,
-                            lt: selectedStartStation.value.lt,
-                            ln: selectedStartStation.value.ln
-                        })
-                        if (!stationInfo.s) {
-                            continue
-                        }
-                        stationInfo.s.forEach((solution) => {
-                            solution.s.forEach((stationId) => {
-                                if (busStationsMap.has(stationId)) {
-                                    const targetStation = busStationsMap.get(stationId)
-                                    nodes.push({id: targetStation.i, lt: targetStation.lt, ln: targetStation.ln})
-                                    stations.push(targetStation)
-                                    promises.push(
-                                        loadStationTimetables(stationId, targetStation, processTimetables, () => {
-                                            console.error('error loading time tables', stationId)
-                                            toast.add({
-                                                severity: 'error',
-                                                summary: 'Error loading timetables',
-                                                life: 3000
-                                            })
-                                            loadingInProgress.value = false
-                                        })
-                                    )
-                                } else {
-                                    console.error("station not found", stationId)
-                                }
-                            })
-                        })
-
-                        const finalStation = busStationsMap.get(selectedDestinationStation.value.i)
-                        nodes.push({
-                            id: finalStation.i,
-                            lt: finalStation.lt,
-                            ln: finalStation.ln
-                        })
-                        promises.push(
-                            loadStationTimetables(finalStation.i, finalStation, processTimetables, () => {
-                                console.error('error loading time tables', finalStation.i)
-                                toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
-                                loadingInProgress.value = false
-                            })
-                        )
-
-                        await Promise.all(promises)
-                        const edges = findBestTimes(stations, finalStation)
-                        travelRoute.value = {nodes: nodes, edges: edges}
-                    }
-                }
-            }
-
-
-        }, () => {
-            toast.add({severity: 'error', summary: 'Error loading pathfinding', life: 3000})
-            loadingInProgress.value = false
-        })
-    }
-
-
+export const store = () => {
     return {
         busStations,
         busLines,
         busStationsMap,
         busLinesMap,
-        selectedBusLine,
         selectedStartStation,
         selectedDestinationStation,
         mapCenter,
         mapZoom,
         maxZoom,
-        timetableVisible,
         selectedTime,
-        buslineVisible,
-        bussesListVisible,
         loadingInProgress,
-        pathfinderMode,
         bussesInStations,
         terminalsData,
-        terminalChooserVisible,
         terminalsList,
         currentTerminal,
         metroBusLines,
@@ -622,7 +344,8 @@ export const store = (loadStationTimetables, loadDirectPathFinder) => {
         metroBusStationsMap,
         processTimetables,
         isWeekend,
-        loadPathFinder,
         travelRoute,
+        streetPoints,
+        terminalNames,
     }
 }

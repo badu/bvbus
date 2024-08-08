@@ -26,13 +26,10 @@ import 'primeicons/primeicons.css'
 
 import App from './App.vue'
 import Map from "@/components/Map.vue"
-import BusLine from "@/components/BusLine.vue"
-import Busses from "@/components/Busses.vue"
-import TimeTable from "@/components/TimeTable.vue"
 import Marquee from "@/components/Marquee.vue"
-import TerminalChooser from "@/components/TerminalChooser.vue"
 
-import {definePreset} from "@primevue/themes";
+import {definePreset} from "@primevue/themes"
+import {createI18n} from "vue-i18n"
 
 const MyPreset = definePreset(Lara, {
     semantic: {
@@ -55,10 +52,28 @@ const MyPreset = definePreset(Lara, {
         }
     }
 })
+// https://vue-i18n.intlify.dev/guide/essentials/started.html
+const i18n = createI18n({
+    locale: 'ro',
+    fallbackLocale: 'en',
+    messages: {
+        en: {
+            message: {
+                hello: 'hello world'
+            }
+        },
+        ro: {
+            message: {
+                hello: 'mno, bună dimineața'
+            }
+        }
+    }
+})
 
 const app = createApp(App)
 app.use(router)
 app.use(ToastService)
+app.use(i18n)
 app.use(PrimeVue, {
     ripple: true,
     theme: {
@@ -85,17 +100,13 @@ app.component('InputText', InputText)
 app.component('SpeedDial', SpeedDial)
 app.component('DataTable', DataTable)
 app.component('Column', Column)
-app.component('Drawer', Drawer)
 app.component('Dialog', Dialog)
 app.component('Timeline', Timeline)
-app.component('SelectButton', SelectButton)
 app.component('ToggleButton', ToggleButton)
+app.component('SelectButton', SelectButton)
 
 app.component('Map', Map)
-app.component('TimeTable', TimeTable)
-app.component('Busses', Busses)
-app.component('BusLine', BusLine)
-app.component('TerminalChooser', TerminalChooser)
+app.component('Drawer', Drawer)
 app.component('Marquee', Marquee)
 
 app.mount('#app')

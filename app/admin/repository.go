@@ -112,6 +112,7 @@ func (l Lines) GetFirstEntryAfter(busID int64, t *Time) (*Time, bool) {
 
 type Busline struct {
 	OSMID          int64     `json:"i"`
+	SiblingOSMID   int64     `json:"si"`
 	Name           string    `json:"b"`
 	From           string    `json:"f"`
 	To             string    `json:"t"`

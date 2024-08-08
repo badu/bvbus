@@ -1,16 +1,17 @@
 <script setup>
-import {onMounted, provide, ref} from "vue"
+import {onMounted, provide} from "vue"
 import {useToast} from "primevue/usetoast"
 import {store} from "@/store/index.js"
 import {service} from "@/service/index.js"
 
 const toast = useToast()
-const {loadStationTimetables, loadBusPoints, loadDirectPathFinder} = service(toast)
-const models = store(loadStationTimetables, loadDirectPathFinder)
+const {loadStationTimetables, loadStreetPoints, loadDirectPathFinder} = service(toast)
+const models = store()
 
 provide('toast', toast)
-provide('loadBusPoints', loadBusPoints)
+provide('loadStreetPoints', loadStreetPoints)
 provide('loadStationTimetables', loadStationTimetables)
+provide('loadDirectPathFinder',loadDirectPathFinder)
 for (const key in models) {
   provide(key, models[key])
 }
@@ -47,7 +48,7 @@ const getScreenInfo = () => {
   return {width: screenWidth, height: screenHeight, orientation: orientation}
 }
 
-onMounted(()=>{
+onMounted(() => {
   window.addEventListener("orientationchange", () => {
     const {w, h, o} = getScreenInfo()
     console.log("your device orientation", `W ${w} H ${h} O ${o}`)
@@ -63,6 +64,6 @@ onMounted(()=>{
 </script>
 
 <template>
-  <Toast position="top-center" />
+  <Toast position="top-center"/>
   <router-view></router-view>
 </template>

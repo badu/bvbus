@@ -908,7 +908,7 @@ func TestGenerateStationsJS(t *testing.T) {
 		t.Fatalf("error reading stations : %#v", err)
 	}
 
-	rows, err := repo.Query(`SELECT bus_id,station_id,station_index FROM bus_stops ORDER BY bus_id,station_index;`)
+	rows, err := repo.Query(`SELECT bus_id,station_id,station_index,stations.name FROM bus_stops INNER JOIN stations ON stations.id = station_id ORDER BY bus_id,station_index;`)
 	if err != nil {
 		t.Fatalf("error querying bus stops:%#v", err)
 	}
@@ -916,13 +916,14 @@ func TestGenerateStationsJS(t *testing.T) {
 	type Stop struct {
 		stationID    int64
 		stationIndex int
+		stationName  string
 	}
 
 	busStops := make(map[int64][]Stop)
 	for rows.Next() {
 		var stop Stop
 		var busID int64
-		err := rows.Scan(&busID, &stop.stationID, &stop.stationIndex)
+		err := rows.Scan(&busID, &stop.stationID, &stop.stationIndex, &stop.stationName)
 		if err != nil {
 			t.Fatalf("error scanning:%#v", err)
 		}
@@ -934,23 +935,31 @@ func TestGenerateStationsJS(t *testing.T) {
 	rows.Close()
 
 	terminals := make(map[int64]struct{})
+	terminalNames := make(map[string]map[int64]struct{})
 	for _, stops := range busStops {
 		if _, has := terminals[stops[0].stationID]; !has {
 			terminals[stops[0].stationID] = struct{}{}
 		}
+
+		if _, has := terminalNames[stops[0].stationName]; !has {
+			terminalNames[stops[0].stationName] = make(map[int64]struct{})
+			terminalNames[stops[0].stationName][stops[0].stationID] = struct{}{}
+		} else {
+			terminalNames[stops[0].stationName][stops[0].stationID] = struct{}{}
+		}
+
 		if _, has := terminals[stops[len(stops)-1].stationID]; !has {
 			terminals[stops[len(stops)-1].stationID] = struct{}{}
 		}
-	}
 
-	terminalNames := make(map[string]struct{})
-	for _, station := range stations {
-		if _, has := terminals[station.OSMID]; has {
-			if _, hasName := terminalNames[station.Name]; !hasName {
-				terminalNames[station.Name] = struct{}{}
-			}
+		if _, has := terminalNames[stops[len(stops)-1].stationName]; !has {
+			terminalNames[stops[len(stops)-1].stationName] = make(map[int64]struct{})
+			terminalNames[stops[len(stops)-1].stationName][stops[len(stops)-1].stationID] = struct{}{}
+		} else {
+			terminalNames[stops[len(stops)-1].stationName][stops[len(stops)-1].stationID] = struct{}{}
 		}
 	}
+
 	var outsideStations strings.Builder
 	var insideStations strings.Builder
 	insideStations.WriteString("const stations = [")
@@ -963,8 +972,6 @@ func TestGenerateStationsJS(t *testing.T) {
 			}
 			if _, has := terminals[station.OSMID]; has {
 				data += fmt.Sprintf(",%q:true", "t")
-			} else if _, has := terminalNames[station.Name]; has {
-				data += fmt.Sprintf(",%q:true", "t")
 			}
 			data += "},\n"
 			outsideStations.WriteString(data)
@@ -973,10 +980,8 @@ func TestGenerateStationsJS(t *testing.T) {
 			if station.HasBoard {
 				data += fmt.Sprintf(",%q:true", "b")
 			}
-			if _, has := terminals[station.OSMID]; has {
-				data += fmt.Sprintf(",%q:true", "t")
-			} else if _, has := terminalNames[station.Name]; has {
-				data += fmt.Sprintf(",%q:true", "t")
+			if ids, has := terminalNames[station.Name]; has && len(ids) > 2 {
+				data += fmt.Sprintf(",%q:true,%q:%d", "t", "count", len(ids))
 			}
 			data += "},\n"
 			insideStations.WriteString(data)
@@ -1009,6 +1014,21 @@ func TestGenerateBussesJS(t *testing.T) {
 		t.Fatalf("error reading busses : %#v", err)
 	}
 
+	siblingsMap := make(map[int64]int64)
+	for i, line1 := range busses {
+		if _, has := siblingsMap[line1.OSMID]; !has {
+			for j, line2 := range busses {
+				if line1.Line == line2.Line && line1.OSMID != line2.OSMID {
+					busses[i].SiblingOSMID = line2.OSMID
+					busses[j].SiblingOSMID = line1.OSMID
+					siblingsMap[line1.OSMID] = line2.OSMID
+					siblingsMap[line2.OSMID] = line1.OSMID
+					break
+				}
+			}
+		}
+	}
+
 	var urbanBusses strings.Builder
 	var metropolitanBusses strings.Builder
 	urbanBusses.WriteString("const busses = [")
@@ -1030,11 +1050,11 @@ func TestGenerateBussesJS(t *testing.T) {
 		}
 
 		if line.IsMetropolitan {
-			data := fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%q,%q:%q,%q:%q,%q:%d,%q:[%s]},\n", "i", line.OSMID, "b", line.Name, "f", from, "t", to, "n", line.Line, "c", line.Color, "d", line.Dir, "s", ids)
+			data := fmt.Sprintf("{%q:%d,%q:%d,%q:%q,%q:%q,%q:%q,%q:%q,%q:%q,%q:%d,%q:[%s]},\n", "i", line.OSMID, "si", line.SiblingOSMID, "b", line.Name, "f", from, "t", to, "n", line.Line, "c", line.Color, "d", line.Dir, "s", ids)
 
 			metropolitanBusses.WriteString(data)
 		} else {
-			data := fmt.Sprintf("{%q:%d,%q:%q,%q:%q,%q:%q,%q:%q,%q:%q,%q:%d,%q:[%s]},\n", "i", line.OSMID, "b", line.Name, "f", from, "t", to, "n", line.Line, "c", line.Color, "d", line.Dir, "s", ids)
+			data := fmt.Sprintf("{%q:%d,%q:%d,%q:%q,%q:%q,%q:%q,%q:%q,%q:%q,%q:%d,%q:[%s]},\n", "i", line.OSMID, "si", line.SiblingOSMID, "b", line.Name, "f", from, "t", to, "n", line.Line, "c", line.Color, "d", line.Dir, "s", ids)
 
 			urbanBusses.WriteString(data)
 		}
@@ -1263,7 +1283,7 @@ func TestGenerateBusPoints(t *testing.T) {
 			sb.WriteRune(']')
 			err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pt/%d.json", prevBusID), []byte(sb.String()), 0644)
 			if err != nil {
-				t.Fatalf("error writing urban_busses.js : %#v", err)
+				t.Fatalf("error writing points json : %#v", err)
 			}
 			t.Logf("bus %s [%d] saved", prevBusNo, prevBusID)
 			prevBusID = busID

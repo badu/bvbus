@@ -11,6 +11,7 @@ export const service = (toast) => {
                     }
                     return null
                 } else {
+                    console.error(`response is not json loading timetables for ${stationId}`)
                     return null
                 }
             } else {
@@ -26,8 +27,8 @@ export const service = (toast) => {
         })
     }
 
-    const loadBusPoints = async (busId, okHandler, errorHandler) => {
-        await fetch(`./pt/${busId}.json`).then((response) => {
+    const loadStreetPoints = async (stationsPairIds, okHandler, errorHandler) => {
+        await fetch(`./pt/${stationsPairIds}.json`).then((response) => {
             const contentType = response.headers.get("content-type")
             if (response.ok) {
                 if (contentType && contentType.indexOf("application/json") !== -1) {
@@ -38,6 +39,7 @@ export const service = (toast) => {
                     }
                     return null
                 } else {
+                    console.error(`response is not json, loading street points ${stationsPairIds}`)
                     return null
                 }
             } else {
@@ -65,6 +67,7 @@ export const service = (toast) => {
                     }
                     return null
                 } else {
+                    console.error(`response is not json loading path finders for ${stationId}`)
                     return null
                 }
             } else {
@@ -82,7 +85,7 @@ export const service = (toast) => {
 
     return {
         loadStationTimetables,
-        loadBusPoints,
+        loadStreetPoints,
         loadDirectPathFinder,
     }
 }
