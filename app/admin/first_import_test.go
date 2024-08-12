@@ -89,6 +89,11 @@ func TestFirstImport(t *testing.T) {
 	}
 	defer relsStmt.Close()
 
+	includedBusIDs := make(map[int64]struct{})
+	for _, busID := range goodBusses {
+		includedBusIDs[busID] = struct{}{}
+	}
+
 	metropolitans := make([]int64, 0)
 	urbans := make([]int64, 0)
 	busses := make(map[int64]*Busline)
@@ -207,7 +212,7 @@ func TestFirstImport(t *testing.T) {
 					continue
 				}
 
-				if _, willSkip := excludedBusses[v.ID]; willSkip {
+				if _, willKeep := includedBusIDs[v.ID]; !willKeep {
 					continue
 				}
 
@@ -230,7 +235,7 @@ func TestFirstImport(t *testing.T) {
 						continue
 					}
 
-					if member.Role == "platform" || member.Role == "platform_entry_only" || member.Role == "platform_exit_only" {
+					if member.Role == OSMPlatform || member.Role == OSMPlatformEntryOnly || member.Role == OSMPlatformExitOnly {
 						_, err = stopsStmt.Exec(v.ID, member.ID, stationIndex)
 						if err != nil {
 							var sqliteErr sqlite3.Error
@@ -254,7 +259,7 @@ func TestFirstImport(t *testing.T) {
 						continue
 					}
 
-					if member.Type == osmpbf.NodeType && (member.Role == "stop" || member.Role == "stop_exit_only" || member.Role == "stop_entry_only") {
+					if member.Type == osmpbf.NodeType && (member.Role == OSMStop || member.Role == OSMStopExitOnly || member.Role == OSMStopEntryOnly) {
 						relationStops[v.ID] = append(relationStops[v.ID], newMember)
 						continue
 					}

@@ -5,10 +5,15 @@ import (
 )
 
 const (
-	OSMNode     = "node"
-	OSMStop     = "stop"
-	OSMWay      = "way"
-	OSMRelation = "relation"
+	OSMNode              = "node"
+	OSMStop              = "stop"
+	OSMStopEntryOnly     = "stop_entry_only"
+	OSMStopExitOnly      = "stop_exit_only"
+	OSMPlatform          = "platform"
+	OSMPlatformEntryOnly = "platform_entry_only"
+	OSMPlatformExitOnly  = "platform_exit_only"
+	OSMWay               = "way"
+	OSMRelation          = "relation"
 )
 
 type Direction int

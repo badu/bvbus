@@ -98,6 +98,20 @@ const stationsMap = new Map()
 
 let flashMarker
 
+
+const piOverOneEighty = Math.PI / 180
+const RADIUS_OF_EARTH_IN_KM = 6371
+
+const toRadian = angle => piOverOneEighty * angle
+const distance = (a, b) => piOverOneEighty * (a - b)
+
+const haversineDistance = ([lat1, lon1], [lat2, lon2]) => {
+  const a = Math.pow(Math.sin(distance(lat2, lat1) / 2), 2) + Math.pow(Math.sin(distance(lon2, lon1) / 2), 2) * Math.cos(toRadian(lat1)) * Math.cos(toRadian(lat2))
+  const result = 2 * Math.asin(Math.sqrt(a))
+
+  return RADIUS_OF_EARTH_IN_KM * result
+}
+
 onMounted(async () => {
   const map = new OLMap({
     target: 'map',

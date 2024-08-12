@@ -10,6 +10,8 @@ const selectedDestinationStation = inject('selectedDestinationStation')
 const loadingInProgress = inject('loadingInProgress')
 const brasovMap = ref(null)
 const travelRoute = inject('travelRoute')
+const loadStreetPoints = inject('loadStreetPoints')
+const busStationsMap = inject('busStationsMap')
 
 const loadAndDisplayGraph = async () => {
   await fetch(`./graph.json`).then((response) => {
@@ -31,42 +33,39 @@ const loadAndDisplayGraph = async () => {
   })
 }
 
+const onLocateMe = () => {
+  const showPosition = async (position) => {
+    const userLocation = {lat: position.coords.latitude, lon: position.coords.longitude, acc: position.accuracy}
+    toast.add({
+      severity: 'info',
+      summary: "Your location was acquired",
+      detail: `Lat ${userLocation.lat} Lon ${userLocation.lon}`,
+      life: 3000
+    })
+    brasovMap.value.findNearbyMarkers(userLocation)
+  }
+
+  const showError = (error) => {
+    toast.add({
+      severity: 'error',
+      summary: "Your location is NOT accessible",
+      detail: error.message,
+      life: 3000
+    })
+  }
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(showPosition, showError)
+  } else {
+    toast.add({
+      severity: 'error',
+      summary: "Geolocation is not supported by this browser",
+      life: 3000
+    })
+  }
+}
+
 const items = ref([
-  {
-    label: 'Busses',
-    icon: 'pi pi-map-marker',
-    command: () => {
-      const showPosition = async (position) => {
-        const userLocation = {lat: position.coords.latitude, lon: position.coords.longitude, acc: position.accuracy}
-        toast.add({
-          severity: 'info',
-          summary: "Your location was acquired",
-          detail: `Lat ${userLocation.lat} Lon ${userLocation.lon}`,
-          life: 3000
-        })
-        brasovMap.value.findNearbyMarkers(userLocation)
-      }
-
-      const showError = (error) => {
-        toast.add({
-          severity: 'error',
-          summary: "Your location is NOT accessible",
-          detail: error.message,
-          life: 3000
-        })
-      }
-
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(showPosition, showError)
-      } else {
-        toast.add({
-          severity: 'error',
-          summary: "Geolocation is not supported by this browser",
-          life: 3000
-        })
-      }
-    }
-  },
   {
     label: 'Busses List',
     icon: 'pi pi-compass',
@@ -83,6 +82,31 @@ const items = ref([
         severity: 'error',
         summary: "Settings are not yet implemented",
         life: 3000
+      })
+    }
+  },
+  {
+    label: 'Test',
+    icon: 'pi pi-arrow-right-arrow-left',
+    command: () => {
+      const firstStationId = 3713443720
+      const secondStationId = 353100201
+
+      loadStreetPoints(`${firstStationId}-${secondStationId}`, (data) => {
+        console.log('loaded',data)
+        const edges = []
+        const nodes = []
+        nodes.push(firstStationId)
+        nodes.push(secondStationId)
+        edges.push({f: firstStationId, t: secondStationId, d: data})
+
+        if (!travelRoute.value) {
+          travelRoute.value = {}
+        }
+        travelRoute.value.nodes = nodes
+        travelRoute.value.edges = edges
+      }, () => {
+        console.error("error loading street points")
       })
     }
   }
@@ -182,12 +206,28 @@ const adjustLowerDrawerHeight = () => {
            @deselectEndStation="onDeselectEndStation"
       />
 
-      <div style="position: relative; bottom: 10%; right:10%">
+      <div style="position: absolute; top: 10%; left:10%">
         <SpeedDial :model="items"
-                   :radius="240"
+                   :radius="120"
                    type="quarter-circle"
-                   direction="up-left"
-                   :style="{ position: 'absolute', right: 0, bottom: 0 }"/>
+                   direction="down-right">
+          <template #icon>
+            <i class="pi pi-align-justify"/>
+          </template>
+        </SpeedDial>
+      </div>
+
+      <div style="position: relative; bottom: 10%; right:10%">
+        <SpeedDial
+            type="quarter-circle"
+            direction="up-left"
+            @click="onLocateMe"
+        >
+          <template #icon>
+            <i class="pi pi-map-marker"/>
+          </template>
+        </SpeedDial>
+
       </div>
 
       <router-view></router-view>

@@ -140,6 +140,7 @@ func (b *Busline) PrintStations() string {
 type Repository struct {
 	*slog.Logger
 	*sql.DB
+	includedBusIDs map[int64]struct{}
 }
 
 func NewRepository(logger *slog.Logger, filePath string) (*Repository, error) {
@@ -164,7 +165,12 @@ func NewRepository(logger *slog.Logger, filePath string) (*Repository, error) {
 		}
 	}
 
-	return &Repository{Logger: logger, DB: db}, nil
+	includedBusIDs := make(map[int64]struct{})
+	for _, busID := range goodBusses {
+		includedBusIDs[busID] = struct{}{}
+	}
+
+	return &Repository{Logger: logger, DB: db, includedBusIDs: includedBusIDs}, nil
 }
 
 func (r *Repository) GetBusses(notCrawled bool) ([]Busline, error) {
@@ -493,7 +499,7 @@ func (r *Repository) LoadNewStreetPoints(bussesData Data) (map[int64][]Node, err
 
 		} else if element.Type == OSMRelation {
 			// check excluded busses
-			if _, willSkip := excludedBusses[element.ID]; willSkip {
+			if _, willKeep := r.includedBusIDs[element.ID]; !willKeep {
 				continue
 			}
 

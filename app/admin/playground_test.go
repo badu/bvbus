@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -89,6 +88,11 @@ func TestLatestPBF(t *testing.T) {
 		t.Fatalf("error preparing street rels statement:%#v", err)
 	}
 	defer relsStmt.Close()
+
+	includedBusIDs := make(map[int64]struct{})
+	for _, busID := range goodBusses {
+		includedBusIDs[busID] = struct{}{}
+	}
 
 	metropolitans := make([]int64, 0)
 	urbans := make([]int64, 0)
@@ -218,7 +222,7 @@ func TestLatestPBF(t *testing.T) {
 					continue
 				}
 
-				if _, willSkip := excludedBusses[v.ID]; willSkip {
+				if _, willKeep := includedBusIDs[v.ID]; !willKeep {
 					continue
 				}
 
@@ -241,7 +245,7 @@ func TestLatestPBF(t *testing.T) {
 						continue
 					}
 
-					if member.Role == "platform" || member.Role == "platform_entry_only" || member.Role == "platform_exit_only" {
+					if member.Role == OSMPlatform || member.Role == OSMPlatformEntryOnly || member.Role == OSMPlatformExitOnly {
 						_, err = stopsStmt.Exec(v.ID, member.ID, stationIndex)
 						if err != nil {
 							var sqliteErr sqlite3.Error
@@ -265,7 +269,7 @@ func TestLatestPBF(t *testing.T) {
 						continue
 					}
 
-					if member.Type == osmpbf.NodeType && (member.Role == "stop" || member.Role == "stop_exit_only" || member.Role == "stop_entry_only") {
+					if member.Type == osmpbf.NodeType && (member.Role == OSMStop || member.Role == OSMStopExitOnly || member.Role == OSMStopEntryOnly) {
 						relationStops[v.ID] = append(relationStops[v.ID], newMember)
 						continue
 					}
@@ -908,7 +912,15 @@ func TestGenerateStationsJS(t *testing.T) {
 		t.Fatalf("error reading stations : %#v", err)
 	}
 
-	rows, err := repo.Query(`SELECT bus_id,station_id,station_index,stations.name FROM bus_stops INNER JOIN stations ON stations.id = station_id ORDER BY bus_id,station_index;`)
+	stationNamesToIDs := make(map[string][]int64)
+	for _, station := range stations {
+		if _, has := stationNamesToIDs[station.Name]; !has {
+			stationNamesToIDs[station.Name] = make([]int64, 0)
+		}
+		stationNamesToIDs[station.Name] = append(stationNamesToIDs[station.Name], station.OSMID)
+	}
+
+	rows, err := repo.Query(`SELECT bus_id, station_id, station_index, stations.name FROM bus_stops INNER JOIN stations ON stations.id = station_id ORDER BY bus_id,station_index;`)
 	if err != nil {
 		t.Fatalf("error querying bus stops:%#v", err)
 	}
@@ -919,6 +931,7 @@ func TestGenerateStationsJS(t *testing.T) {
 		stationName  string
 	}
 
+	stationsToBusses := make(map[int64][]int64)
 	busStops := make(map[int64][]Stop)
 	for rows.Next() {
 		var stop Stop
@@ -931,6 +944,11 @@ func TestGenerateStationsJS(t *testing.T) {
 			busStops[busID] = make([]Stop, 0)
 		}
 		busStops[busID] = append(busStops[busID], stop)
+
+		if _, hasStation := stationsToBusses[stop.stationID]; !hasStation {
+			stationsToBusses[stop.stationID] = make([]int64, 0)
+		}
+		stationsToBusses[stop.stationID] = append(stationsToBusses[stop.stationID], busID)
 	}
 	rows.Close()
 
@@ -970,9 +988,51 @@ func TestGenerateStationsJS(t *testing.T) {
 			if station.HasBoard {
 				data += fmt.Sprintf(",%q:true", "b")
 			}
+
 			if _, has := terminals[station.OSMID]; has {
 				data += fmt.Sprintf(",%q:true", "t")
 			}
+
+			if bussesIDs, has := stationsToBusses[station.OSMID]; has {
+				data += fmt.Sprintf(",%q:[", "l")
+				for i, busID := range bussesIDs {
+					if i > 0 {
+						data += ","
+					}
+					data += fmt.Sprintf("%d", busID)
+				}
+				data += "]"
+			} else {
+				data += fmt.Sprintf(",%q:false", "l")
+			}
+
+			if stationIDs, has := stationNamesToIDs[station.Name]; has {
+				if len(stationIDs) == 2 {
+					for _, stationID := range stationIDs {
+						if stationID == station.OSMID {
+							continue
+						}
+						data += fmt.Sprintf(",%q:%d", "ss", stationID)
+					}
+				}
+			} else if len(stationIDs) > 0 {
+				data += fmt.Sprintf(",%q:[", "sss")
+				wroteOne := false
+				for _, stationID := range stationIDs {
+					if stationID == station.OSMID {
+						continue
+					}
+					if wroteOne {
+						data += ","
+					}
+					data += fmt.Sprintf("%d", stationID)
+					if !wroteOne {
+						wroteOne = true
+					}
+				}
+				data += "]"
+			}
+
 			data += "},\n"
 			outsideStations.WriteString(data)
 		} else {
@@ -980,9 +1040,51 @@ func TestGenerateStationsJS(t *testing.T) {
 			if station.HasBoard {
 				data += fmt.Sprintf(",%q:true", "b")
 			}
+
 			if ids, has := terminalNames[station.Name]; has && len(ids) > 2 {
-				data += fmt.Sprintf(",%q:true,%q:%d", "t", "count", len(ids))
+				data += fmt.Sprintf(",%q:true", "t")
 			}
+
+			if bussesIDs, has := stationsToBusses[station.OSMID]; has {
+				data += fmt.Sprintf(",%q:[", "l")
+				for i, busID := range bussesIDs {
+					if i > 0 {
+						data += ","
+					}
+					data += fmt.Sprintf("%d", busID)
+				}
+				data += "]"
+			} else {
+				data += fmt.Sprintf(",%q:false", "l")
+			}
+
+			if stationIDs, has := stationNamesToIDs[station.Name]; has {
+				if len(stationIDs) == 2 {
+					for _, stationID := range stationIDs {
+						if stationID == station.OSMID {
+							continue
+						}
+						data += fmt.Sprintf(",%q:%d", "ss", stationID)
+					}
+				} else if len(stationIDs) > 1 {
+					data += fmt.Sprintf(",%q:[", "sss")
+					wroteOne := false
+					for _, stationID := range stationIDs {
+						if stationID == station.OSMID {
+							continue
+						}
+						if wroteOne {
+							data += ","
+						}
+						data += fmt.Sprintf("%d", stationID)
+						if !wroteOne {
+							wroteOne = true
+						}
+					}
+					data += "]"
+				}
+			}
+
 			data += "},\n"
 			insideStations.WriteString(data)
 		}
@@ -1241,69 +1343,4 @@ func TestGenerateTimeTables(t *testing.T) {
 		}
 	}
 	t.Logf("%d jsons written", len(data))
-}
-
-func TestGenerateBusPoints(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
-	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
-	if err != nil {
-		t.Fatalf("Error opening SQLite database: %v", err)
-	}
-	defer db.Close()
-
-	rows, err := db.Query(`SELECT point_id, bus_id, point_index, is_stop, street_points.lat as lat, street_points.lng, busses.no AS lng FROM street_rels INNER JOIN street_points ON street_points.id = street_rels.point_id INNER JOIN busses on busses.id = street_rels.bus_id ORDER BY bus_id,point_index;`)
-	if err != nil {
-		logger.Error("error querying street relations", "err", err)
-		t.Fatalf("error querying street relations: %#v", err)
-	}
-
-	var sb strings.Builder
-	sb.WriteRune('[')
-	count := 0
-	prevBusID := int64(-1)
-	prevBusNo := ""
-	for rows.Next() {
-		var pointID, busID, pointIndex int64
-		var lat, lng float64
-		var busNo string
-		var isStop bool
-		err := rows.Scan(&pointID, &busID, &pointIndex, &isStop, &lat, &lng, &busNo)
-		if err != nil {
-			logger.Error("error scanning", "err", err)
-			t.Fatalf("error scanning street relations: %#v", err)
-		}
-
-		if prevBusID < 0 {
-			prevBusNo = busNo
-			prevBusID = busID
-		}
-
-		if prevBusID != busID {
-			sb.WriteRune(']')
-			err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pt/%d.json", prevBusID), []byte(sb.String()), 0644)
-			if err != nil {
-				t.Fatalf("error writing points json : %#v", err)
-			}
-			t.Logf("bus %s [%d] saved", prevBusNo, prevBusID)
-			prevBusID = busID
-			prevBusNo = busNo
-			count = 0
-			sb.Reset()
-			sb.WriteRune('[')
-		}
-
-		if count > 0 {
-			sb.WriteRune(',')
-		}
-
-		sb.WriteString(fmt.Sprintf("{%q:%.08f,%q:%.08f", "lt", lat, "ln", lng))
-		if isStop {
-			sb.WriteString(",\"s\":true")
-		}
-
-		sb.WriteRune('}')
-		count++
-	}
-	rows.Close()
 }

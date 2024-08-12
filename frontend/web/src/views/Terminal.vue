@@ -21,7 +21,7 @@ const visible = ref(false)
 
 const onChosenTerminal = (event) => {
   const stationId = event.data.i
-  console.log('terminal chosen',stationId)
+  console.log('terminal chosen', stationId)
   if (selectedStartStation.value === null) {
     router.push(`/timetable/${stationId}`)
   } else if (selectedDestinationStation.value === null) {
@@ -54,6 +54,7 @@ onMounted(async () => {
   if (!terminalId) {
     return
   }
+
 
   loadingInProgress.value = true
   let terminal
@@ -105,9 +106,14 @@ onMounted(async () => {
   currentTerminal.value = terminal
   terminalsList.value = terminal.c
   loadingInProgress.value = false
-  visible.value = true
+  if (selectedStartStation.value === null) {
+    visible.value = true
+  } else {
+    router.push(`/path/${selectedStartStation.value.i}/${terminalId}`)
+  }
 })
-const onDrawerClose= ()=>{
+
+const onDrawerClose = () => {
   router.push({name: "main"})
 }
 </script>

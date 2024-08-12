@@ -12,13 +12,7 @@ const metroBusStationsMap = inject('metroBusStationsMap')
 const selectedBusLine = ref(null)
 const stations = ref([])
 
-onMounted(() => {
-  if (!route.params.busId) {
-    return
-  }
-
-  const busId = parseInt(route.params.busId)
-
+const selectBusLine = (busId) => {
   let selectedBusStations
   let selectedBus
   if (metroBusLinesMap.has(busId)) {
@@ -79,6 +73,15 @@ onMounted(() => {
   stations.value = newStations
   selectedBusLine.value = selectedBus
   console.log(`displaying stations of bus [${busId}] ${selectedBusLine.value.b} with ${stations.value.length} stations`)
+}
+
+onMounted(() => {
+  if (!route.params.busId) {
+    return
+  }
+
+  const busId = parseInt(route.params.busId)
+  selectBusLine(busId)
 })
 
 const onBusNumberClicked = (event, data) => {
@@ -91,15 +94,25 @@ const onStationClicked = (event, data) => {
   router.push(`/timetable/${data.i}`)
 }
 const visible = ref(true)
+
+const onDisplaySibling = () => {
+  router.replace({name: 'busStations', params: {busId: selectedBusLine.value.si}})
+  selectBusLine(selectedBusLine.value.si)
+}
+const onDrawerClose = () => {
+  router.push({name: "main"})
+}
 </script>
 
 <template>
   <Drawer
       v-model:visible="visible"
+      @hide="onDrawerClose"
       style="background-color: #1E232B">
 
     <template #header>
       <div style="white-space: nowrap;text-align: center;vertical-align: center;display: flex;">
+
         <Tag>
           <img src="/svgs/bus.svg" style="height: 30px;width: 30px;"/>
         </Tag>
@@ -109,6 +122,7 @@ const visible = ref(true)
             :style="{minWidth: '40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: selectedBusLine.c,color:selectedBusLine.tc}"/>
 
         <h2 style="color: #FED053;user-select: none;">{{ selectedBusLine.b }}</h2>
+        <Button icon="pi pi-backward" @click="onDisplaySibling"/>
       </div>
     </template>
 

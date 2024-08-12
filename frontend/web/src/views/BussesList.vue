@@ -13,11 +13,15 @@ const onBusSelect = (event) => {
   router.push(`/busses/${event.data.i}`)
 }
 const visible = ref(true)
+const onDrawerClosed = () =>{
+  router.push({name: "main"})
+}
 </script>
 
 <template>
   <Drawer
       v-model:visible="visible"
+      @hide="onDrawerClosed"
       style="background-color: #1E232B">
 
     <template #header>

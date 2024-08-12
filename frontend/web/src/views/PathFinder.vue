@@ -26,10 +26,6 @@ const visible = ref(true)
 
 const route = useRoute()
 const router = useRouter()
-//selectedStartStation.value = busStationsMap.get(273437289)
-//selectedDestinationStation.value = busStationsMap.get(9183614613)
-
-//await loadPathFinder()
 
 const getNextDepartureTime = (currentTime, timetable, busId) => {
   if (!timetable) {
@@ -362,8 +358,6 @@ onMounted(async () => {
     }
     selectedDestinationStation.value = targetStation
   }
-
-
   await loadPathFinder()
 })
 

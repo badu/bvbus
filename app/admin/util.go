@@ -21,71 +21,78 @@ const (
 	NauticalMilesInMeters = 1852            // nautical mile is 1852 meters
 )
 
-// these busses no longer exist in RATBV or they are doubled
-var excludedBusses = map[int64]struct{}{
-	5386184:  {}, // 5386184 - 18: Fundăturii cap linie => Bariera Bartolomeu (replaced by 18*)
-	5386185:  {}, // 5386185 - 18: Bariera Bartolomeu => Fundăturii cap linie (replaced by 18*)
-	5389485:  {}, // 5389485 - 24: Baciului => Livada Poștei (replaced by 24: Baciului - Stupinii Noi - Livada Postei)
-	5389491:  {}, // 5389491 - 24: Livada Poștei => Baciului (replaced by 24: Baciului - Stupinii Noi - Livada Postei)
-	5390252:  {}, // 5390252 - 29: Fundăturii cap linie => Terminal Gară (replaced by 29: Bartolomeu Nord - Terminal Gara)
-	5390253:  {}, // 5390253 - 29: Terminal Gară => Fundăturii cap linie (replaced by 29: Bartolomeu Nord - Terminal Gara)
-	5410208:  {}, // 5410208 - 52: Roman => Tocile (replaced by 52: Panselelor - Tocile)
-	5410209:  {}, // 5410209 - 52: Tocile => Roman (replaced by 52: Panselelor - Tocile)
-	13337515: {}, // 13337515 - 24: ICPC => Livada Poștei (replaced by 24: Baciului - Stupinii Noi - Livada Postei)
-	13337516: {}, // 13337516 - 24: Livada Poștei => ICPC (replaced by 24: Baciului - Stupinii Noi - Livada Postei)
-	13385025: {}, // 13385025 - 41B: Pensiunea Stupina => Livada Poștei (no longer exists)
-	13385026: {}, // 13385026 - 41B: Livada Poștei => Pensiunea Stupina (no longer exists)
-	14100605: {}, // 14100605 - 29: Parc Industrial Ghimbav=> Terminal Gară (replaced by 29: Bartolomeu Nord - Terminal Gara)
-	14100606: {}, // 14100606 - 29: Terminal Gară => Parc Industrial Ghimbav (replaced by 29: Bartolomeu Nord - Terminal Gara)
-	15548831: {}, // 15548831 - 100M: Poiana Brașov => Terminal Gară (no longer exists)
-	15548832: {}, // 15548832 - 100M: Terminal Gară => Poiana Brașov (no longer exists)
-	15548833: {}, // 15548833 - 20M: Poiana Brașov => Livada Poștei (no longer exists)
-	15548834: {}, // 15548834 - 20M: Livada Poștei => Poiana Brașov (no longer exists)
-	15628902: {}, // 15628902 - 60: Telecabina => Poiana Mică (replaced by 60: Silver Mountain - Telecabina)
-	15628903: {}, // 15628903 - 60: Poiana Mică => Telecabina (replaced by 60: Silver Mountain - Telecabina)
-	17657104: {}, // 17657104 - 55: Livada Poștei => Cetățuie (not imported - Turistic bus)
-	17657105: {}, // 17657105 - 55: Cetățuie => Livada Poștei (not imported - Turistic bus)
-	17683699: {}, // 17683699 - 56: Cimitir Micșunica => Roman (not imported - no stations)
-	17683700: {}, // 17683700 - 56: Roman => Cimitir Micșunica (not imported - no stations)
-	17686307: {}, // 17686307 - 41: Gazon => Livada Poștei (replaced by 41: Livada Postei - Lujerului)
-	17686308: {}, // 17686308 - 41: Livada Poștei => Gazon (replaced by 41: Livada Postei - Lujerului)
-	17686309: {}, // 17686309 - 40: Gazon => Terminal Gară (replaced by 40: Terminal Gara - Lujerului)
-	17686310: {}, // 17686310 - 40: Terminal Gară => Gazon (replaced by 40: Terminal Gara - Lujerului)
-	13330257: {}, // TE1: Noua - Sirul Beethoven (not imported - school transport)
-	13330303: {}, // TE2: Garaje Sacele - Sirul Beethoven (not imported - school transport)
-	13337898: {}, // TE4: Noua - Sirul Beethoven (not imported - school transport)
-	13337900: {}, // TE3: Valea Cetatii - Sirul Beethoven (not imported - school transport)
-	13337902: {}, // TE5: Triaj - Sirul Beethoven (not imported - school transport)
-	13337904: {}, // TE6: Triaj - Sirul Beethoven (not imported - school transport)
-	13337906: {}, // TE7: Rulmentul - Sirul Beethoven (not imported - school transport)
-	13337908: {}, // TE8: Rulmentul - Sirul Beethoven (not imported - school transport)
-	13337910: {}, // TE9: Rulmentul - Sirul Beethoven (not imported - school transport)
-	13337974: {}, // TE12: Bartolomeu Nord - Sirul Beethoven (not imported - school transport)
-	13337976: {}, // TE11: Pelicanului - Sirul Beethoven (not imported - school transport)
-	13337978: {}, // TE10: Stadionul Municipal - Sirul Beethoven (not imported - school transport)
-	14980788: {}, // XMAS: Roman - Roman (not imported - school transport)
-	15097891: {}, // TE13: Fundaturii cap linie - Sirul Beethoven (not imported - school transport)
-	15548830: {}, // 130M: Parcare Cetate Rasnov - Poiana Brasov (no longer exists)
-	15548829: {}, // 130M: Poiana Brasov - Parcare Cetate Rasnov (no longer exists)
-	15483408: {}, // 130S: Baza Trambulina - Mihai Viteazul (no longer exists)
-	15483409: {}, // 130S: Mihai Viteazul - Baza Trambulina (no longer exists)
-	5397474:  {}, // 5: Roman - Stadionul Municipal (replaced by 17828247)
-	13393576: {}, // 610: Cap Linie Purcareni - Roman (replaced by 13393598)
-	13393575: {}, // 610: Roman - Cap Linie Purcareni (replaced by 13393597)
-	15962949: {}, // A1: Terminal Gara - Aeroportul Brasov (replaced by 17828248)
-	13337514: {}, // 24: Livada Postei - Stupinii Noi - Baciului (replaced by 17828245)
-	17828244: {}, // 24: Livada Poștei => De Mijloc => ICPC (replaced by 13337513)
-	5390232:  {}, // 28: Fundaturii cap linie - Livada Postei (replaced by 13338406)
-	5390233:  {}, // 28: Livada Postei - Memorandului - Fundaturii cap linie (not valid anymore)
-	17828243: {}, // 28: Livada Postei - De Mijloc - Fundaturii cap linie (replaced by 17828242)
-	13338405: {}, // 28: Livada Postei - Memorandului - IAR Ghimbav (not valid anymore)
-	13338407: {}, // 28: Livada Postei - Memorandului - ICPC (not valid anymore)
-	13338408: {}, // 28: ICPC - Livada Postei (not valid anymore)
-	17828241: {}, // 28: Livada Postei - De Mijloc - ICPC (not valid anymore)
-	5399073:  {}, // 14: Livada Postei - Fabrica de Var (replaced by 17828246)
-	16062795: {}, // 140: CEC Zarnesti - Stadionul Municipal (replaced by 17802672)
-	16062794: {}, // 140: Stadionul Municipal - CEC Zarnesti (replaced by 17802671)
+var goodBusses = []int64{
+	5369802, 5369803, // Triaj - Livada Poștei - Troleibuz 1
+	5369951, 5369952, // Rulmentul - Livada Poștei - Troleibuz 2
+	12995686, 12995687, // Rulmentul - Tractorul Nou - Livada Poștei - Autobuz 2B
+	5417774, 5417775, // Valea Cetății - Stadionul Tineretului - Troleibuz 3
+	14280747, 14280746, // Terminal Gară - Pe Tocile - Autobuz 4
+	5397475, 17828247, // Roman - Stadionul Municipal - Autobuz 5
+	5372251, 5372252, // Stadionul Municipal - Măgurele - Autobuz 5M
+	5372281, 5372280, // Saturn - Livada Poștei - Troleibuz 6
+	5417864, 5417865, // Roman - Rulmentul - Troleibuz 7
+	5417963, 5417964, // Saturn - Rulmentul - Troleibuz 8
+	5372431, 5372432, // Rulmentul - Stadionul Municipal - Autobuz 9
+	5417974, 5417975, // Valea Cetății - Triaj - Troleibuz 10
+	5399072, 17828246, // Fabrica de Var - Livada Poștei - Autobuz 14
+	5409347, 5409348, // Triaj - Avantgarden - Autobuz 15
+	5386102, 5386103, // Stadionul Municipal - Livada Poștei - Autobuz 16
+	5386137, 5386136, // Noua - Livada Poștei - Autobuz 17
+	5409920, 5409919, // Terminal Gară - Timișul de Jos - Autobuz 17B
+	13338245, 13338246, // Bariera Bartolomeu - Fundăturii / I.A.R. - Autobuz 18
+	5387306, 5387307, // Livada Poștei - Poiana Brașov - Autobuz 20
+	14428424, 14428467, // Open top Bus - Autobuz 20B
+	5386246, 5386247, // Triaj - Noua - Autobuz 21
+	5387344, 5387343, // Saturn - Stadionul Tineretului - Autobuz 22
+	5388542, 5388543, // Saturn - Stadionul Municipal - Autobuz 23
+	5388612, 5388613, // Triaj - Stadionul Municipal - Autobuz 23B
+	13337513, 17828245, // Livada Poștei - Stupinii Noi - Autobuz 24
+	5389640, 5389639, // Avantgarden - Roman - Autobuz 25
+	13338406, 17828242, // Livada Poștei - Fundăturii / I.A.R. - Autobuz 28
+	16198891, 16198892, // Terminal Gară - Bartolomeu Nord - Autobuz 29
+	5390264, 5390265, // Valea Cetății - Livada Poștei - Troleibuz 31
+	16218666, 16218665, // Valea Cetății - 13 Decembrie - Autobuz 32
+	5418078, 5418079, // Valea Cetății - Roman - Troleibuz 33
+	5390288, 5390289, // Timiș-Triaj - Livada Poștei - Autobuz 34
+	5390300, 5390299, // Izvor - Livada Poștei - Autobuz 34B
+	5390328, 5390329, // Noua - Terminal Gară - Autobuz 35
+	5390330, 5390331, // Independenței - Livada Poștei - Autobuz 36
+	5410019, 5410018, // Craiter - Hidro A - Autobuz 37
+	5390360, 5390361, // Terminal Gară - Lujerului - Autobuz 40
+	5410088, 5410087, // Lujerului - Livada Poștei - Autobuz 41
+	13329734, 14292150, // Camera de Comerț - Solomon - MiniAutobuz 50
+	13330002, 13330003, // Tocile - Roman / Panselelor - Autobuz 52
+	13319271, 13319272, // Turnului - Panselelor - Autobuz 53
+	14899833, 14899832, // Triaj - Hidro A - Autobuz 54
+	17657104, 17657105, // Livada Poștei - Cetățuie - Autobuz 55
+	17683699, 17683700, // Cimitir Micșunica - Roman - Autobuz 56
 
+	15962950, 17828248, // Terminal Gară - Livada Poștei - Aeroportul Brașov - Autobuz A1
+
+	13688026, 13688025, // Terminal Gară - Telecabina Poiana Bv. - Autobuz 100
+	13342503, 13342504, // Barșov - Cristian - Autobuz 110
+	16033482, 16033483, // Brașov - Cristian - Vulcan - Autobuz 120
+	13342988, 13342989, // Brașov - Cristian - Râșnov - Autobuz 130
+	13343061, 13343062, // Brașov - Romacril Râșnov - Autobuz 131
+	17802672, 17802671, // Brașov - Zărnești - Autobuz 140
+	13354416, 13354415, // Brașov - Ghimbav - Autobuz 210
+	13354663, 13354662, // Brașov - Codlea - Autobuz 220
+	15075211, 15075212, // Brașov - Hălchiu - Satu Nou - Autobuz 310
+	17580531, 17580530, // Brașov - Feldioara - Autobuz 320
+	13365595, 13365596, // Brașov - Sânpetru(Subcetate) - Autobuz 410
+	13365769, 13365770, // Brașov - Sânpetru Residence - Autobuz 411
+	13367387, 13367388, // Brașov - Sânpetru(Spital) - Autobuz 412
+	13369963, 13370055, // Brașov - Sânpetru - Bod - Autobuz 420
+	17580529, 17580528, // Brașov - Hărman - Podu Oltului - Autobuz 511
+	17580527, 17580526, // Brașov - Prejmer - Lunca Câlnicului - Autobuz 520
+	17580525, 17580524, // Brașov - Vama Buzăului - Autobuz 540
+	13393598, 13393597, // Brașov - Zizin - Purcăreni - Autobuz 610
+	13393665, 13393664, // Brașov - Cărpiniș - Tărlungeni - Autobuz 611
+	13393857, 13393856, // Brașov - Cărpiniș - Tărlungeni - Zizin - Purcăreni - Autobuz 612
+	17132992, 17132991, // Brașov - Budila - Autobuz 620
+	13545863, 13545862, // Barșov - Săcele-  Bus 710
+	16624358, 16624359, // Barșov - Gârcini - Bus 711
+	13396981, 13396980, // Brașov - Predeal - Autobuz 810
 }
 
 func Compare(a, b string) int {
@@ -256,4 +263,14 @@ func Heading(startLat, startLon, destLat, destLon float64) float64 {
 	heading = DegreesPerRadian * heading
 
 	return heading
+}
+
+func DistanceOnEdges(lat1, lon1, lat2, lon2 float64) float64 {
+	dLat := math.Abs(lat2 - lat1)
+	dLon := math.Abs(lon2 - lon1)
+
+	latEdge := Haversine(lat1, lon1, lat1+dLat, lon1)
+	lonEdge := Haversine(lat1, lon1, lat1, lon1+dLon)
+
+	return latEdge + lonEdge
 }
