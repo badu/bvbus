@@ -249,57 +249,6 @@ func GETAllStations(logger *slog.Logger, repo *admin.Repository) func(w http.Res
 	}
 }
 
-func GETStreets(logger *slog.Logger, repo *admin.Repository) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		validPoints, err := repo.GetNotDeletedStreetPoints()
-		if err != nil {
-			logger.Error("error querying points", "err", err)
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		processedWays, err := repo.GetStreetRels(validPoints)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		responseData, err := json.Marshal(processedWays)
-		if err != nil {
-			logger.Error("Error marshaling response JSON", "err", err)
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		w.Write(responseData)
-	}
-}
-
-func DELETEPoint(logger *slog.Logger, repo *admin.Repository) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		pointID := r.PathValue("id")
-		id, err := strconv.ParseInt(pointID, 10, 64)
-		if err != nil {
-			logger.Error("error parsing bus id", "err", err)
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusBadRequest)
-			return
-		}
-
-		_, err = repo.DB.Exec(`UPDATE street_points SET is_deleted = true WHERE id = ?;`, id)
-		if err != nil {
-			logger.Error("error updating point", "err", err)
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		w.Write([]byte(`{"result":"ok"}`))
-	}
-}
-
 func GETQueryStreets(logger *slog.Logger, repo *admin.Repository) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -320,34 +269,7 @@ func GETQueryStreets(logger *slog.Logger, repo *admin.Repository) func(w http.Re
 			return
 		}
 
-		var bussesData admin.Data
-		err = json.Unmarshal(busses, &bussesData)
-		if err != nil {
-			logger.Error("Error parsing JSON", "err", err)
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		err = repo.CleanupStreetPoints()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		processedWays, err := repo.LoadNewStreetPoints(bussesData)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		responseData, err := json.Marshal(processedWays)
-		if err != nil {
-			logger.Error("Error marshaling response JSON", "err", err)
-			http.Error(w, fmt.Sprintf("{%q:%q}", "error", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		w.Write(responseData)
+		w.Write(busses)
 	}
 }
 
@@ -485,8 +407,6 @@ func main() {
 	mux.HandleFunc("GET /bus/{id}", GETBusWithStations(logger, repo))
 	mux.HandleFunc("GET /crawl/{id}", GETCrawl(logger, repo))
 	mux.HandleFunc("GET /save/{id}", GETSave(logger, repo))
-	mux.HandleFunc("GET /streets", GETStreets(logger, repo))
-	mux.HandleFunc("DELETE /point/{id}", DELETEPoint(logger, repo))
 	mux.HandleFunc("GET /streets/load", GETQueryStreets(logger, repo))
 	mux.HandleFunc("GET /crossings", GETQueryCrossings(logger))
 	mux.HandleFunc("POST /crossings", POSTCrossing(logger, repo))

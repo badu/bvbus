@@ -7,19 +7,18 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-func findAndRemove(busses []int64, busID int64) []int64 {
-	for i, v := range busses {
-		if v == busID {
-			return append(busses[:i], busses[i+1:]...)
-		}
-	}
-	return busses
-
+type stationAndStop struct {
+	stopID    int64
+	stationID int64
+	index     int
 }
+
 func GetStationFromOverpass(stationID int64) (*Data, error) {
 	query := fmt.Sprintf("data=[out:json];node(%d);out body;>;out skel qt;", stationID)
 	response, err := http.Post("https://overpass-api.de/api/interpreter", "text/plain", strings.NewReader(query))
@@ -42,14 +41,73 @@ func GetStationFromOverpass(stationID int64) (*Data, error) {
 	return &result, nil
 }
 
-func TestGetBussesWithPoints(t *testing.T) {
-	const useOverpass = false
+func TestGetOverpassData(t *testing.T) {
 	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
 	if err != nil {
 		t.Fatalf("error:%#v", err)
 	}
 
-	rows, err := db.Query(`SELECT id, name FROM stations ORDER BY id;`)
+	rows, err := db.Query(`SELECT id, name FROM busses ORDER BY id;`)
+	if err != nil {
+		t.Fatalf("error:%#v", err)
+	}
+	for rows.Next() {
+		var busID int64
+		var busName string
+		err := rows.Scan(&busID, &busName)
+		if err != nil {
+			t.Fatalf("error scanning:%#v", err)
+		}
+
+		fileName := fmt.Sprintf("./../../data/busses/%d.json", busID)
+
+		bussesQuery := fmt.Sprintf("data=[out:json];relation(%d);out body;>;out skel qt;", busID)
+		bussesResponse, err := http.Post("https://overpass-api.de/api/interpreter", "text/plain", strings.NewReader(bussesQuery))
+		if err != nil {
+			t.Fatalf("error:%#v", err.Error())
+		}
+
+		busses, err := io.ReadAll(bussesResponse.Body)
+		if err != nil {
+			t.Fatalf("error:%#v", err)
+		}
+
+		err = os.WriteFile(fileName, busses, 0644)
+		if err != nil {
+			t.Fatalf("error writing urban_busses.js : %#v", err)
+		}
+
+		bussesResponse.Body.Close()
+	}
+
+	rows.Close()
+	db.Close()
+}
+
+func TestMakeTrajectories(t *testing.T) {
+	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
+	if err != nil {
+		t.Fatalf("error:%#v", err)
+	}
+
+	rows, err := db.Query(`SELECT id, name FROM busses ORDER BY id;`)
+	if err != nil {
+		t.Fatalf("error:%#v", err)
+	}
+	busNames := make(map[int64]string)
+
+	for rows.Next() {
+		var busID int64
+		var busName string
+		err := rows.Scan(&busID, &busName)
+		if err != nil {
+			t.Fatalf("error scanning:%#v", err)
+		}
+		busNames[busID] = busName
+	}
+	rows.Close()
+
+	rows, err = db.Query(`SELECT id, name FROM stations ORDER BY id;`)
 	if err != nil {
 		t.Fatalf("error:%#v", err)
 	}
@@ -72,49 +130,18 @@ func TestGetBussesWithPoints(t *testing.T) {
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT id, name FROM busses ORDER BY id;`)
-	if err != nil {
-		t.Fatalf("error:%#v", err)
-	}
+	trajectories := make(map[int64][]*Node)
+	stationsAndStops := make(map[int64][]stationAndStop)
+	for busID := range busNames {
+		stats := make([]int64, 0)
+		stops := make([]int64, 0)
+		trajectories[busID] = make([]*Node, 0)
+		stationsAndStops[busID] = make([]stationAndStop, 0)
+		fileName := fmt.Sprintf("./../../data/busses/%d.json", busID)
 
-	busNames := make(map[int64]string)
-	allStopsMap := make(map[int64]struct{})
-	stationsKeys := make(map[string]float64)
-	for rows.Next() {
-		var busID int64
-		var busName string
-		err := rows.Scan(&busID, &busName)
+		busses, err := os.ReadFile(fileName)
 		if err != nil {
-			t.Fatalf("error scanning:%#v", err)
-		}
-		busNames[busID] = busName
-		goodBusses = findAndRemove(goodBusses, busID)
-
-		fileName := fmt.Sprintf("./../../frontend/web/public/busses/%d.json", busID)
-		var busses []byte
-		if useOverpass {
-			bussesQuery := fmt.Sprintf("data=[out:json];relation(%d);out body;>;out skel qt;", busID)
-			bussesResponse, err := http.Post("https://overpass-api.de/api/interpreter", "text/plain", strings.NewReader(bussesQuery))
-			if err != nil {
-				t.Fatalf("error:%#v", err.Error())
-			}
-
-			busses, err = io.ReadAll(bussesResponse.Body)
-			if err != nil {
-				t.Fatalf("error:%#v", err)
-			}
-
-			err = os.WriteFile(fileName, busses, 0644)
-			if err != nil {
-				t.Fatalf("error writing urban_busses.js : %#v", err)
-			}
-
-			bussesResponse.Body.Close()
-		} else {
-			busses, err = os.ReadFile(fileName)
-			if err != nil {
-				return
-			}
+			return
 		}
 
 		var bussesData Data
@@ -126,14 +153,7 @@ func TestGetBussesWithPoints(t *testing.T) {
 		uniqueWays := make(map[int64]*Node)
 		uniqueNodes := make(map[int64]*Node)
 		relationWays := make([]Member, 0)
-		type stationAndStop struct {
-			stopID    int64
-			stationID int64
-			index     int
-		}
 
-		stops := make([]int64, 0)
-		stats := make([]int64, 0)
 		for _, element := range bussesData.Elements {
 			switch element.Type {
 			case OSMWay:
@@ -167,30 +187,23 @@ func TestGetBussesWithPoints(t *testing.T) {
 			t.Fatalf("error : %d != %d", len(stops), len(stats))
 		}
 
-		stationsAndStops := make([]stationAndStop, 0)
-		stopsMap := make(map[int64]stationAndStop)
 		for i := 0; i < len(stops); i++ {
-			if prev, has := stopsMap[stops[i]]; has {
-				t.Fatalf("stop already declared %d for %d at %d", stops[i], busID, prev.index)
-			}
 			data := stationAndStop{
 				index:     i,
 				stopID:    stops[i],
 				stationID: stats[i],
 			}
-			stationsAndStops = append(stationsAndStops, data)
-			stopsMap[stops[i]] = data
-			allStopsMap[stops[i]] = struct{}{}
+			stationsAndStops[busID] = append(stationsAndStops[busID], data)
 		}
 
 		lastNodeID := stops[0]
-		trajectory := make([]*Node, 0)
 		firstWayNode, firstWayNodeFound := uniqueNodes[stops[0]]
 		if !firstWayNodeFound {
 			t.Logf("WAY NODE NOT FOUND: %d", stops[0])
 			break
 		}
-		trajectory = append(trajectory, firstWayNode)
+
+		trajectories[busID] = append(trajectories[busID], firstWayNode)
 		for _, wayMember := range relationWays {
 			way, hasFoundWay := uniqueWays[wayMember.Ref]
 			if !hasFoundWay {
@@ -219,7 +232,7 @@ func TestGetBussesWithPoints(t *testing.T) {
 						break
 					}
 
-					trajectory = append(trajectory, wayNode)
+					trajectories[busID] = append(trajectories[busID], wayNode)
 
 					lastNodeID = wayNodeID
 
@@ -237,13 +250,38 @@ func TestGetBussesWithPoints(t *testing.T) {
 						break
 					}
 
-					trajectory = append(trajectory, wayNode)
+					trajectories[busID] = append(trajectories[busID], wayNode)
 
 					lastNodeID = wayNodeID
 				}
 			}
 		}
+	}
 
+	stationsToBusMap := make(map[string]map[int64]struct{})
+	singleBusKey := make(map[string]int64)
+	for busID := range busNames {
+		data := stationsAndStops[busID]
+		for i := 1; i < len(data); i++ {
+			key := fmt.Sprintf("%d-%d", data[i-1].stationID, data[i].stationID)
+			if _, has := stationsToBusMap[key]; !has {
+				stationsToBusMap[key] = make(map[int64]struct{})
+			}
+			if _, has := stationsToBusMap[key][busID]; has {
+				t.Fatalf("ERROR %q %d exists", key, busID)
+			}
+			stationsToBusMap[key][busID] = struct{}{}
+			if _, has := singleBusKey[key]; !has {
+				singleBusKey[key] = busID
+			}
+		}
+	}
+
+	const writeFiles = false
+	const writeToDatabase = false
+	stationsDistances := make(map[string]float64)
+	wroteDistance := make(map[string]struct{})
+	for busID, trajectory := range trajectories {
 		currentDistance := 0.0
 
 		var lastStationID int64
@@ -251,30 +289,43 @@ func TestGetBussesWithPoints(t *testing.T) {
 		var psb strings.Builder
 
 		pointsWritten := 0
+		stopIndex := 0
+
+		nodesKeeper := make([]*Node, 0)
 		for i, node := range trajectory {
+			if len(stationsAndStops[busID])-1 < stopIndex {
+				t.Logf("%d %d of %d", busID, stopIndex, len(stationsAndStops[busID]))
+				continue
+			}
+			stopInfo := stationsAndStops[busID][stopIndex]
 			if i == 0 {
-				stopInfo, isStop := stopsMap[node.ID]
-				if !isStop {
-					t.Fatalf("first point in trajectory should be stop, but it's not")
+				if stopInfo.stopID != node.ID {
+					t.Fatalf("first stop index is bad %d should be %d", node.ID, stopInfo.stopID)
 				}
-				if stopInfo.index != 0 {
-					t.Fatalf("first stop index should be zero, but it's %d", stopInfo.index)
-				}
+
 				lastStationID = stopInfo.stationID
 				prevNode = trajectory[i]
 				psb.WriteString(fmt.Sprintf("{%q:%d,%q:%.08f,%q:%.08f}", "i", node.ID, "lt", node.Lat, "ln", node.Lon))
 				pointsWritten++
+				stopIndex++
+
+				nodesKeeper = append(nodesKeeper, &Node{
+					ID:     node.ID,
+					Lat:    node.Lat,
+					Lon:    node.Lon,
+					IsStop: true,
+				})
 				continue
 			}
 
-			stopInfo, isStop := stopsMap[node.ID]
-			if !isStop {
+			if stopInfo.stopID != node.ID {
 				// t.Logf("point %d => %d lat %f lng %f", i, node.ID, node.Lat, node.Lon)
 				psb.WriteRune(',')
 				currentDistance = currentDistance + Haversine(prevNode.Lat, prevNode.Lon, node.Lat, node.Lon)
 				psb.WriteString(fmt.Sprintf("{%q:%d,%q:%.08f,%q:%.08f}", "i", node.ID, "lt", node.Lat, "ln", node.Lon))
 				pointsWritten++
 				prevNode = trajectory[i]
+				nodesKeeper = append(nodesKeeper, node)
 			} else {
 				currentDistance = currentDistance + Haversine(prevNode.Lat, prevNode.Lon, node.Lat, node.Lon)
 				psb.WriteRune(',')
@@ -290,25 +341,79 @@ func TestGetBussesWithPoints(t *testing.T) {
 				} else {
 					//t.Logf("stop %d => %d lat %f lng %f [stop index %d, STATION ID %d, stop id %d] %f meters", i, node.ID, node.Lat, node.Lon, stopInfo.index, stopInfo.stationID, stopInfo.stopID, currentDistance)
 				}
+
+				if !hasCurr {
+					data, err := GetStationFromOverpass(stopInfo.stationID)
+					if err != nil {
+						t.Fatalf("error getting station from overpass: %#v", err)
+					}
+
+					t.Logf("should create current %d %q lat %f long %f board %t outside %t", data.Elements[0].ID, data.Elements[0].Tags["name"], data.Elements[0].Lat, data.Elements[0].Lon, data.Elements[0].Tags["departures_board"] == "realtime", len(data.Elements[0].Tags["fare_zone"]) > 0)
+				}
+
 				prevStation, hasPrev := stations[lastStationID]
+				if !hasPrev {
+					data, err := GetStationFromOverpass(stopInfo.stationID)
+					if err != nil {
+						t.Fatalf("error getting station from overpass: %#v", err)
+					}
+
+					t.Logf("should create previous %d %q lat %f long %f board %t outside %t", data.Elements[0].ID, data.Elements[0].Tags["name"], data.Elements[0].Lat, data.Elements[0].Lon, data.Elements[0].Tags["departures_board"] == "realtime", len(data.Elements[0].Tags["fare_zone"]) > 0)
+				}
+
+				if lastStationID == stopInfo.stationID {
+					t.Fatalf("what is going on here? %d => %q %s - %s %d out of %d", busID, busNames[busID], prevStation.Name, station.Name, i, len(trajectory))
+				}
 
 				key := fmt.Sprintf("%d-%d", lastStationID, stopInfo.stationID)
-				if existingDistance, has := stationsKeys[key]; has {
-					if existingDistance != currentDistance {
-						if hasPrev && hasCurr {
-							t.Logf("error : %q - %q [%d-%d] written with %f but current %f", prevStation.Name, station.Name, lastStationID, stopInfo.stationID, existingDistance, currentDistance)
-						} else {
-							t.Logf("error : %d - %d written with %f but current %f", lastStationID, stopInfo.stationID, existingDistance, currentDistance)
+
+				if _, has := stationsToBusMap[key]; !has {
+					t.Fatalf("no, really, what is going on? %q on %d", key, busID)
+				}
+
+				nodesKeeper = append(nodesKeeper, &Node{
+					ID:     node.ID,
+					Lat:    node.Lat,
+					Lon:    node.Lon,
+					IsStop: true,
+				})
+				_, hasWrote := wroteDistance[key]
+				if writeToDatabase && !hasWrote {
+					tx, err := db.Begin()
+					if err != nil {
+						t.Fatalf("error beginning transaction: %#v", err)
+					}
+
+					stmt1, err := tx.Prepare(InsertDistanceSQL)
+					if err != nil {
+						tx.Rollback()
+						t.Fatalf("error preparing distance SQL : %#v", err)
+					}
+
+					stmt2, err := tx.Prepare(InsertPointSQL)
+					if err != nil {
+						tx.Rollback()
+						t.Fatalf("error preparing point SQL : %#v", err)
+					}
+
+					_, err = stmt1.Exec(lastStationID, stopInfo.stationID, currentDistance, 0)
+					if err != nil {
+						tx.Rollback()
+						t.Fatalf("error inserting distance SQL : %#v", err)
+					}
+
+					for index, n := range nodesKeeper {
+						_, err = stmt2.Exec(n.ID, n.Lat, n.Lon, index+1, n.IsStop, lastStationID, stopInfo.stationID)
+						if err != nil {
+							//tx.Rollback()
+							t.Logf("error inserting point : %#v\n%d %d %d", err, n.ID, lastStationID, stopInfo.stationID)
 						}
 					}
 
-					psb.Reset()
-					psb.WriteString(fmt.Sprintf("{%q:%d,%q:%.08f,%q:%.08f,%q:true}", "i", node.ID, "lt", node.Lat, "ln", node.Lon, "s"))
-					pointsWritten = 1
-					currentDistance = 0.0
-					lastStationID = stopInfo.stationID
-					prevNode = trajectory[i]
-					continue
+					tx.Commit()
+					wroteDistance[key] = struct{}{}
+				} else {
+					t.Logf("%d points into database for %q between %q and %q", len(nodesKeeper), busNames[busID], prevStation.Name, station.Name)
 				}
 
 				var sb strings.Builder
@@ -317,12 +422,13 @@ func TestGetBussesWithPoints(t *testing.T) {
 				sb.WriteRune(']')
 				sb.WriteRune('}')
 
-				err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pt/%s.json", key), []byte(sb.String()), 0644)
-				if err != nil {
-					t.Fatalf("error writing points json : %#v", err)
+				if writeFiles {
+					err = os.WriteFile(fmt.Sprintf("./../../frontend/web/public/pt/%s.json", key), []byte(sb.String()), 0644)
+					if err != nil {
+						t.Fatalf("error writing points json : %#v", err)
+					}
 				}
-
-				stationsKeys[key] = currentDistance
+				stationsDistances[key] = currentDistance
 				if hasPrev && hasCurr {
 					//t.Logf("%q - %q = %f", prevStation.Name, station.Name, currentDistance)
 				} else {
@@ -335,14 +441,85 @@ func TestGetBussesWithPoints(t *testing.T) {
 				currentDistance = 0.0
 				lastStationID = stopInfo.stationID
 				prevNode = trajectory[i]
+				stopIndex++
+				nodesKeeper = make([]*Node, 0)
 			}
 		}
 	}
 
-	rows.Close()
-	db.Close()
+	if writeFiles {
+		for busID, points := range trajectories {
+			var sb strings.Builder
+			sb.WriteRune('[')
+			for i, point := range points {
+				if i > 0 {
+					sb.WriteRune(',')
+				}
+				sb.WriteString(fmt.Sprintf("{%q:%d,%q:%f,%q:%f}", "i", point.ID, "lt", point.Lat, "ln", point.Lon))
+			}
+			sb.WriteRune(']')
+			err = os.WriteFile(fmt.Sprintf("./../../frontend/admin/public/trajectories/%d.json", busID), []byte(sb.String()), 0644)
+			if err != nil {
+				t.Fatalf("error writing points json : %#v", err)
+			}
+		}
+	}
 
-	for _, busID := range goodBusses {
-		t.Logf("bus missing ? %d", busID)
+	sortedResult := make([]*Edge, 0)
+	for stationKey, distance := range stationsDistances {
+		busID, has := singleBusKey[stationKey]
+		if !has {
+			t.Fatalf("error finding bus for station key %s", stationKey)
+		}
+
+		parts := strings.Split(stationKey, "-")
+		fromStationIDInt, _ := strconv.Atoi(parts[0])
+		fromStationID := int64(fromStationIDInt)
+		toStationIDInt, _ := strconv.Atoi(parts[1])
+		toStationID := int64(toStationIDInt)
+
+		var firstTime uint16
+		err = db.QueryRow(`SELECT enc_time FROM time_tables WHERE station_id = ? AND bus_id = ? LIMIT 1;`, fromStationID, busID).Scan(&firstTime)
+		var secondTime uint16
+		err = db.QueryRow(`SELECT enc_time FROM time_tables WHERE station_id = ? AND bus_id = ? LIMIT 1;`, toStationID, busID).Scan(&secondTime)
+
+		firstResult := Time{}
+		firstResult.Decompress(firstTime)
+		secondResult := Time{}
+		secondResult.Decompress(secondTime)
+		minutes := secondResult.Diff(firstResult)
+		normalized := uint16((distance / 600) + 1)
+		if minutes > normalized {
+			minutes = normalized
+		}
+		data := Edge{Meters: distance, Minutes: minutes, FromStationID: fromStationID, ToStationID: toStationID}
+
+		t.Logf("distance %s - %s = %f meters %d minutes", stations[fromStationID].Name, stations[toStationID].Name, distance, minutes)
+
+		if writeToDatabase {
+			_, err = db.Exec(`UPDATE distances SET minutes = ? WHERE from_station_id = ? AND to_station_id = ?`, minutes, fromStationID, toStationID)
+			if err != nil {
+				t.Fatalf("error updating distances: %#v", err)
+			}
+		}
+
+		sortedResult = append(sortedResult, &data)
+	}
+
+	sort.Sort(ByDistance(sortedResult))
+
+	if writeFiles {
+		var sb strings.Builder
+		sb.WriteString("const distances = new Map();\n")
+		for _, measurement := range sortedResult {
+			key := fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)
+			sb.WriteString(fmt.Sprintf("distances.set(%q,{%q:%f,%q:%d})\n", key, "d", measurement.Meters, "m", measurement.Minutes))
+		}
+		sb.WriteString("export default distances;")
+
+		err = os.WriteFile("./../../frontend/web/src/distances.js", []byte(sb.String()), 0644)
+		if err != nil {
+			t.Fatalf("error writing distances.js : %#v", err)
+		}
 	}
 }

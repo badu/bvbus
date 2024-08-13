@@ -264,11 +264,12 @@ watch(selectedRoute, (route) => {
   allSegmentsSource.clear()
 
   if (!route || !route.points) {
+    console.error('points missing')
     return
   }
 
   if (bussesMap.has(route.id)) {
-    toast.add({severity: 'success', summary: `${bussesMap.get(route.id).b}`, group: 'tc', life: 3000})
+    toast.add({severity: 'success', summary: `${bussesMap.get(route.id).b} ${route.points.length} points`, group: 'tc', life: 3000})
   } else {
     toast.add({severity: 'warn', summary: `Bus line for route ${route.id} not found`, group: 'tc', life: 3000})
   }
@@ -278,10 +279,10 @@ watch(selectedRoute, (route) => {
   markers = []
 
   route.points.forEach((point) => {
-    const coord = fromLonLat([point.lon, point.lat])
+    const coord = fromLonLat([point.ln, point.lt])
     coords.push(coord)
     const marker = new Feature({geometry: new Point(coord)})
-    marker.setId(point.id)
+    marker.setId(point.i)
     marker['textDisplay'] = `${point.idx}`
     features.push(marker)
     markers.push(marker)
@@ -310,6 +311,7 @@ onMounted(async () => {
   let hadError = false
   displayInProgress.value = true
   pointsMap = new Map()
+  const lines = []
   await fetch(`${backendURL}lines`).then((response) => {
     if (response.ok) {
       return response.json()
@@ -319,97 +321,53 @@ onMounted(async () => {
     }
   }).then((data) => {
     if (data && !hadError) {
-      data.forEach(line => {
+      data.forEach(async (line) => {
         bussesMap.set(line.i, line)
+        lines.push(line)
       })
     }
   })
 
-  await fetch(`${backendURL}streets`).then((response) => {
-    if (response.ok) {
-      return response.json()
-    } else {
-      hadError = true
-      console.error('could not load street points', response)
-    }
-  }).then((data) => {
-    displayInProgress.value = false
-    if (!hadError) {
-      const newData = []
-      const features = []
-      Object.keys(data).map((route) => {
-        const routeID = parseInt(route)
-        const row = {id: routeID, size: data[route].length, points: data[route]}
-
-        if (!bussesMap.has(routeID)) {
-          toast.add({
-            severity: 'warn',
-            summary: `Bus line for route with id ${route} not found`,
-            group: 'tc',
-            life: 3000
-          })
-        } else {
-          row.line = bussesMap.get(routeID)
-        }
-
-        newData.push(row)
-
-        if (row.line && row.line.n) {
-          const coords = []
-          data[route].forEach((point) => {
-            const coord = fromLonLat([point.lon, point.lat])
-            coords.push(coord)
-            if (pointsMap.has(point.id)) {
-              pointsMap.get(point.id).push(row.line.n)
-            } else {
-              pointsMap.set(point.id, [row.line.n])
-            }
-
-            const marker = new Feature({geometry: new Point(coord)})
-            marker.setStyle(redCircle)
-            marker.setId(point.id)
-            //features.push(marker)
-          })
-
-          const lineFeature = new Feature({geometry: new LineString(coords)})
-          features.push(lineFeature)
-          //roadsSource.addFeature(lineFeature)
-        }
-      })
-
-      const points =[]
+  const newData = []
+  const features = []
+  for (const line of lines) {
+    await fetch(`./trajectories/${line.i}.json`).then((response) => {
+      if (response.ok) {
+        return response.json()
+      }
+    }).then((points) => {
       const coords = []
-
+      let i = 1
       points.forEach((point) => {
-        const coord = fromLonLat([point.lng, point.lat])
-        const marker = new Feature({geometry: new Point(coord)})
-        marker.setId(`${point.id} ${point.stop}`)
-
-        marker.setStyle(
-            new Style({
-              image: new CircleStyle({
-                radius: 7,
-                fill: new Fill({color: 'red'}),
-              }),
-              text: new Text({
-                font: '28px Calibri,sans-serif',
-                text: `${point.id} ${point.stop}`,
-                offsetY: -15,
-                fill: new Fill({color: '#000'}),
-              }),
-            })
-        )
-        //roadsSource.addFeature(marker)
+        point.idx = i
+        i++
+        const coord = fromLonLat([point.ln, point.lt])
         coords.push(coord)
+        if (pointsMap.has(point.i)) {
+          pointsMap.get(point.i).push(line.n)
+        } else {
+          pointsMap.set(point.i, [line.n])
+        }
+
+        const marker = new Feature({geometry: new Point(coord)})
+        marker.setStyle(redCircle)
+        marker.setId(point.i)
+        //features.push(marker)
       })
+
       const lineFeature = new Feature({geometry: new LineString(coords)})
-      roadsSource.addFeature(lineFeature)
-      console.log('features added', features.length)
-      //roadsSource.addFeatures(features)
-      newData.sort(naturalSort)
-      allRoutes.value = newData
-    }
-  })
+      features.push(lineFeature)
+
+      const row = {id: line.i, size: points.length, points: points}
+      row.line = bussesMap.get(line.i)
+      newData.push(row)
+    })
+  }
+
+  newData.sort(naturalSort)
+  allRoutes.value = newData
+
+  displayInProgress.value = false
 
   const map = new OLMap({
     target: 'map',

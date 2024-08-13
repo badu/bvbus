@@ -89,8 +89,8 @@ const items = ref([
     label: 'Test',
     icon: 'pi pi-arrow-right-arrow-left',
     command: () => {
-      const firstStationId = 3713443720
-      const secondStationId = 353100201
+      const firstStationId = 9164803420
+      const secondStationId = 9164803422
 
       loadStreetPoints(`${firstStationId}-${secondStationId}`, (data) => {
         console.log('loaded',data)

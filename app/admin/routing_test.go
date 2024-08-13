@@ -12,18 +12,6 @@ import (
 	"gonum.org/v1/gonum/graph/simple"
 )
 
-/*
-*
-1. Each transfer incurs a 10 minute penalty (unless it is a timed transfer) in the riders mind. That is to say mentally a trip involving a single bus that takes 40 minutes is roughly equivalent to a 30minute trip that requires a transfer.
-2. Maximum distance that most people are willing to walk to a bus stop is 1/4 mile. Train station / Light rail about 1/2 mile.
-3. Distance is irrelevant to the public transportation rider. (Only time is important)
-4. Frequency matters (if a connection is missed how long until the next bus). Riders will prefer more frequent service options if the alternative is being stranded for an hour for the next express.
-5. Rail has a higher preference than bus ( more confidence that the train will come and be going in the right direction)
-6. Having to pay a new fare is a big hit. (add about a 15-20min penalty)
-7. Total trip time matters as well (with above penalties)
-8. How seamless is the connect? Does the rider have to exist a train station cross a busy street? Or is it just step off a train and walk 4 steps to a bus?
-9. Crossing busy streets -- another big penalty on transfers -- may miss connection because can't get across street fast enough.
-*/
 type StationRoute struct {
 	Id        int64
 	Name      string
@@ -83,16 +71,12 @@ func (r RouteEdge) ReversedEdge() graph.Edge {
 type StationsAndBusses struct {
 	stations map[int64]*StationRoute
 	busses   map[int64]*BusRoute
-	points   map[int64]*Node
-	ways     map[int64][]Node
 }
 
 func GetStationsAndBusses() (*StationsAndBusses, error) {
 	result := StationsAndBusses{
 		stations: make(map[int64]*StationRoute),
 		busses:   make(map[int64]*BusRoute),
-		points:   make(map[int64]*Node),
-		ways:     make(map[int64][]Node),
 	}
 
 	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
@@ -162,47 +146,6 @@ func GetStationsAndBusses() (*StationsAndBusses, error) {
 		} else {
 			fmt.Printf("%s stops in %d, but it's probably outside town\n", b.Number, stationID)
 		}
-	}
-	rows.Close()
-
-	rows, err = db.Query(`SELECT id, lat, lng FROM street_points ORDER BY id;`)
-	if err != nil {
-		return nil, err
-	}
-
-	for rows.Next() {
-		var node Node
-		err := rows.Scan(&node.ID, &node.Lat, &node.Lon)
-		if err != nil {
-			return nil, err
-		}
-
-		if _, has := result.points[node.ID]; !has {
-			result.points[node.ID] = &node
-		} else {
-			return nil, fmt.Errorf("already seen %d node", node.ID)
-		}
-	}
-	rows.Close()
-
-	rows, err = db.Query(`SELECT point_id, bus_id, is_stop FROM street_rels ORDER BY bus_id,point_index;`)
-	if err != nil {
-		return nil, err
-	}
-
-	for rows.Next() {
-		var node Node
-		var busID int64
-		err := rows.Scan(&node.ID, &busID, &node.IsStop)
-		if err != nil {
-			return nil, err
-		}
-
-		if _, has := result.ways[busID]; !has {
-			result.ways[busID] = make([]Node, 0)
-		}
-
-		result.ways[busID] = append(result.ways[busID], node)
 	}
 	rows.Close()
 
