@@ -164,7 +164,7 @@ func GetStationsAndDistances(logger *slog.Logger, db *sql.DB) (*Graph, error) {
 }
 
 func TestPathFinderWithNum(t *testing.T) {
-	const writeToDisk = true
+	const writeToDisk = false
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -202,6 +202,7 @@ func TestPathFinderWithNum(t *testing.T) {
 				T: endStation,
 				W: link.Meters,
 			}
+
 			sn := graph.Node(link.FromStationID)
 			if sn == nil {
 				t.Fatalf("start node is not a graph node")

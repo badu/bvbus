@@ -91,6 +91,8 @@ const loadingInProgress = ref(false)
 const terminalsList = ref([])
 const terminalsData = []
 
+const nearbyStations = ref(null)
+
 const terminalNames = new Map()
 // process metropolitan bus lines
 for (let i = 0; i < metro_busses.length; i++) {
@@ -141,7 +143,16 @@ for (let i = 0; i < urban_busses.length; i++) {
             // verify that we know the distance
             const key = `${urban_busses[i].s[j - 1]}-${urban_busses[i].s[j]}`
             if (!distances.has(key)) {
-                console.error('key not found in distances map for urban bus', key, urban_busses[i])
+                let startStation, endStation
+                for (let k = 0; k < urban_stations.length; k++) {
+                    if (urban_stations[k].i === urban_busses[i].s[j - 1]) {
+                        startStation = urban_stations[k]
+                    }
+                    if (urban_stations[k].i === urban_busses[i].s[j]) {
+                        endStation = urban_stations[k]
+                    }
+                }
+                console.error('key not found in distances map for urban bus', key, startStation.n, endStation.n, urban_busses[i].i)
             }
         }
 
@@ -244,15 +255,13 @@ for (const [terminalName, terminal] of terminalNames) {
 }
 
 const processTimetables = (data, targetStation) => {
-    const now = new Date()
-    const minutes = now.getHours() * 60 + now.getMinutes()
     const newTimes = []
     const extraTimes = []
     if (!targetStation) {
         console.error("targetStation is null!!!")
         return
     }
-    let firstFutureOccurrence = -1
+
     data.forEach((timeTableData) => {
         let busLine
         if (!targetStation.o) {
@@ -280,36 +289,22 @@ const processTimetables = (data, targetStation) => {
                 n: busLine.n,
                 c: busLine.c,
                 tc: busLine.tc,
-                future: false,
             }
             decompressDateTime(row, time)
 
             if (isWeekend) {
                 if (row.day === 2 || row.day === 3 || row.day === 4) {
-                    if (minutes < row.minutes) {
-                        if (firstFutureOccurrence < 0) {
-                            firstFutureOccurrence = row.minutes
-                        }
-                        row.future = true
-                    }
                     newTimes.push(row)
                 } else {
                     extraTimes.push(row)
                 }
             } else {
                 if (row.day === 1) {
-                    if (minutes < row.minutes) {
-                        if (firstFutureOccurrence < 0) {
-                            firstFutureOccurrence = row.minutes
-                        }
-                        row.future = true
-                    }
                     newTimes.push(row)
                 } else {
                     extraTimes.push(row)
                 }
             }
-
         })
 
         newTimes.sort((a, b) => a.minutes - b.minutes)
@@ -318,7 +313,6 @@ const processTimetables = (data, targetStation) => {
         targetStation.timetable = newTimes
         targetStation.extraTimetable = extraTimes
         targetStation.busses.sort(naturalSortBussesNo)
-        targetStation.firstFutureOccurrence = firstFutureOccurrence
     })
 }
 
@@ -347,5 +341,6 @@ export const store = () => {
         travelRoute,
         streetPoints,
         terminalNames,
+        nearbyStations,
     }
 }

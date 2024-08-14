@@ -1,183 +1,117 @@
-<script setup>
-import {ref, computed, onMounted, useCssModule} from "vue"
-
-const props = defineProps({
-  height: {
-    type: Number,
-    default: () => {
-      return 40
-    }
-  },
-  id: {
-    type: String,
-    required: true,
-    default: () => {
-      return "marquee-id"
-    },
-  },
-  paused: {
-    type: Boolean,
-    default: () => {
-      return false
-    },
-  },
-  repeat: {
-    type: Number,
-    default: () => {
-      return 100
-    },
-  },
-  reverse: {
-    type: Boolean,
-    default: () => {
-      return false
-    },
-  },
-  space: {
-    type: Number,
-    default: () => {
-      return 10
-    },
-  },
-  speed: {
-    type: Number,
-    default: () => {
-      return 10000
-    },
-  },
-  vertical: {
-    type: Boolean,
-    default: () => {
-      return false
-    }
-  },
-  width: {
-    type: Number,
-    default: () => {
-      return 100
-    },
-  },
-})
-
-let container = ref(null)
-let containerWidth = ref(0)
-let items = ref([])
-let itemsLength = ref(0)
-const itemsWidth = ref([])
-let style = ref(null)
-
-const styleElement = computed(
-    () =>
-        `
-        animation-duration: ${props.speed}ms;
-        animation-direction: ${props.reverse ? "reverse" : "normal"};
-        animation-play-state: ${props.paused ? "paused" : "running"};
-        height: ${props.vertical ? props.height : '40px'}`
-)
-
-const calculateContainerWidth = () => {
-  for (let index = 0; index < itemsLength; index++) {
-    itemsWidth.value.push(items[index].offsetWidth)
-    setItemSpace(index)
-  }
-  containerWidth = itemsWidth.value.reduce((a, b) => a + b, 0)
-}
-
-const cloneItems = () => {
-  const repeatCounter = getRepeatCounter()
-  for (let index = 0; index < repeatCounter; index++) {
-    container.appendChild(items[index].cloneNode(true))
-  }
-}
-
-const getRepeatCounter = () => {
-  return items.length * props.repeat
-}
-
-const setItems = () => {
-  items = container.children// get all children that will be put inside the slot of the component
-}
-
-const setItemsLength = () => {
-  itemsLength = items.length
-}
-
-const setItemSpace = (index) => {
-  props.vertical ? items[index].style.marginBottom = `${props.space}px` : items[index].style.marginRight = `${props.space}px`
-}
-
-const setContainer = () => {
-  container = document.querySelector(`#${props.id} .${props.vertical ? style.sliderVerticalContainer : style.sliderContainer}`
-  )
-}
-
-const setContainerWidth = () => {
-  if (props.vertical) {
-    container.style.width = 'auto'
-  } else {
-    container.style.width = '40vw'
-  }
-}
-
-onMounted(() => {
-  style = useCssModule()
-  setContainer()
-  setItems()
-  setItemsLength()
-  calculateContainerWidth()
-  setContainerWidth()
-  cloneItems()
-})
-
-</script>
-
 <template>
-  <div :id="id" :class="$style.slider">
-    <div :class="vertical ? $style.sliderVerticalContainer : $style.sliderContainer" :style="styleElement">
-      <slot>
-
-      </slot>
+  <div class="marquee-container">
+    <div
+        v-for="(item, index) in items"
+        :key="index"
+        v-show="currentItem === index"
+        class="marquee-item">
+      <Tag
+          :rounded="true"
+          :value="item.n"
+          :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: item.c, color:item.tc }"/>
+        <span class="text" ref="text">{{ item.f }} - {{ item.t }}</span>
     </div>
   </div>
 </template>
 
-<style lang="css" module>
-.slider {
+<script>
+export default {
+  props: {
+    items: {
+      type: Array,
+      required: true,
+    },
+  },
+  data() {
+    return {
+      currentItem: 0,
+      marqueeWidth: 0,
+      running: false,
+    }
+  },
+  mounted() {
+    this.running = true
+    this.startMarquee()
+  },
+  unmounted() {
+    this.running = false
+  },
+  methods: {
+    startMarquee() {
+      this.setMarqueeWidth()
+      this.animateMarquee()
+    },
+    setMarqueeWidth() {
+      if (this.running) {
+        if (this.$refs.text && this.$refs.text.length === 1) {
+          this.marqueeWidth = this.$refs.text[0].offsetWidth
+        }
+      }
+    },
+    animateMarquee() {
+      if (!this.running) {
+        return
+      }
+
+      setTimeout(() => {
+        this.nextItem()
+      }, 5000)
+    },
+    nextItem() {
+      if (!this.running) {
+        return
+      }
+      this.currentItem = (this.currentItem + 1) % this.items.length
+      setTimeout(this.startMarquee, 500)
+    },
+  },
+}
+</script>
+
+<style scoped>
+.marquee-container {
+  position: relative;
   overflow: hidden;
+  height: 42px;
 }
 
-.sliderContainer {
+.marquee-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
   width: 100%;
-  animation-name: animateHorizontal;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-  display: flex;
+  animation: slideIn 0.5s ease-in-out;
+  text-align: center;
+  vertical-align: center;
+
 }
 
-.sliderVerticalContainer {
-  height: fit-content;
-  animation-name: animateVertical;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-  display: flex;
-  flex-direction: column;
+.text {
+  display: inline-block;
+  white-space: nowrap;
+  color: #FED053;
+  animation: marquee 4s linear infinite;
+  font-weight: 800;
 }
 
-@keyframes animateHorizontal {
-  0% {
-    transform: translateX(0%);
+@keyframes marquee {
+  from {
+    transform: translateX(10%);
   }
-  100% {
+  to {
     transform: translateX(-100%);
   }
 }
 
-@keyframes animateVertical {
-  0% {
-    transform: translateY(0%);
-  }
-  100% {
+@keyframes slideIn {
+  from {
     transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
   }
 }
 </style>

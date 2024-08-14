@@ -133,21 +133,7 @@ const onDrawerClose = () => {
       </template>
 
       <template #opposite="slotProps">
-        <Marquee :id="'lineLinksInStation' + slotProps.item.i">
-          <template v-for="bus in slotProps.item.otherBusses">
-            <div style="white-space: nowrap;text-align: center;vertical-align: center"
-                 @click="onBusNumberClicked($event,slotProps.item)">
-              {{ slotProps.item.index }}
-              <Tag
-
-                  :rounded="true"
-                  :value="bus.n"
-                  :style="{minWidth: '40px', maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc}"/>
-              {{ bus.f }} - {{ bus.t }}
-            </div>
-          </template>
-        </Marquee>
-
+        <Marquee :id="'lineLinksInStation' + slotProps.item.i" :items="slotProps.item.otherBusses" />
       </template>
     </Timeline>
   </Drawer>

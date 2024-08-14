@@ -33,6 +33,11 @@ const router = createRouter({
                     name: 'pathFinder',
                     path: '/path/:startStationId/:endStationId',
                     component: () => import('@/views/PathFinder.vue')
+                },
+                {
+                    name:'stationChooser',
+                    path:'/stations',
+                    component:()=>import('@/views/StationChooser.vue')
                 }
             ]
         },

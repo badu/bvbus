@@ -77,18 +77,6 @@ func TestLatestPBF(t *testing.T) {
 	}
 	defer stationsStmt.Close()
 
-	pointsStmt, err := tx.Prepare("INSERT INTO street_points(id, lat, lng) VALUES (?, ?, ?);")
-	if err != nil {
-		t.Fatalf("error preparing street points statement:%#v", err)
-	}
-	defer pointsStmt.Close()
-
-	relsStmt, err := tx.Prepare("INSERT INTO street_rels(point_id, point_index, bus_id, is_stop) VALUES (?, ?, ?, ?);")
-	if err != nil {
-		t.Fatalf("error preparing street rels statement:%#v", err)
-	}
-	defer relsStmt.Close()
-
 	includedBusIDs := make(map[int64]struct{})
 	for _, busID := range goodBusses {
 		includedBusIDs[busID] = struct{}{}
@@ -368,8 +356,9 @@ func TestLatestPBF(t *testing.T) {
 						break
 					}
 				}
-
+				_ = itsAStop
 				if _, has := seen[wayNode.ID]; !has {
+					/**
 					_, err = pointsStmt.Exec(wayNode.ID, wayNode.Lat, wayNode.Lon)
 					if err != nil {
 						var sqliteErr sqlite3.Error
@@ -382,8 +371,9 @@ func TestLatestPBF(t *testing.T) {
 							}
 						}
 					}
+					*/
 				}
-
+				/**
 				_, err = relsStmt.Exec(wayNode.ID, pointIndex, busID, itsAStop)
 				if err != nil {
 					var sqliteErr sqlite3.Error
@@ -396,7 +386,7 @@ func TestLatestPBF(t *testing.T) {
 						}
 					}
 				}
-
+				*/
 				seen[wayNode.ID] = struct{}{}
 				pointIndex++
 			}
@@ -419,8 +409,9 @@ func TestLatestPBF(t *testing.T) {
 							break
 						}
 					}
-
+					_ = itsAStop
 					if _, has := seen[wayNode.ID]; !has {
+						/**
 						_, err = pointsStmt.Exec(wayNode.ID, wayNode.Lat, wayNode.Lon)
 						if err != nil {
 							var sqliteErr sqlite3.Error
@@ -433,8 +424,9 @@ func TestLatestPBF(t *testing.T) {
 								}
 							}
 						}
+						*/
 					}
-
+					/**
 					_, err = relsStmt.Exec(wayNode.ID, pointIndex, busID, itsAStop)
 					if err != nil {
 						var sqliteErr sqlite3.Error
@@ -447,7 +439,7 @@ func TestLatestPBF(t *testing.T) {
 							}
 						}
 					}
-
+					*/
 					seen[wayNode.ID] = struct{}{}
 					pointIndex++
 				}

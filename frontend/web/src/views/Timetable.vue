@@ -8,7 +8,6 @@ const router = useRouter()
 const loadingInProgress = inject('loadingInProgress')
 
 const selectedStartStation = inject('selectedStartStation')
-const selectedDestinationStation = inject('selectedDestinationStation')
 const metroBusStationsMap = inject('metroBusStationsMap')
 const busStationsMap = inject('busStationsMap')
 
@@ -18,17 +17,25 @@ const processTimetables = inject('processTimetables')
 const selectedTime = inject('selectedTime')
 const isWeekend = inject('isWeekend')
 const toast = inject('toast')
-const visible = ref(false)
-
+const visible = ref(true)
+const selectedDisplay = ref("Today")
+const displayOptions = ref(['Today', isWeekend ? 'Weekdays' : 'Saturday / Sunday'])
+const currentTimes = ref([])
+let isSelfUpdate = false
 let busTable = ref(null)
 
 const scrollToFirstValid = (currentTab, table) => {
   if (!table) {
+    console.error('no table to scroll into')
+    return
+  }
+  if (!currentTimes.value) {
+    console.error('timetable not ready')
     return
   }
 
   if (currentTab === 'Today') {
-    const firstIndex = selectedStartStation.value.timetable.findIndex(entry => {
+    const firstIndex = currentTimes.value.findIndex(entry => {
       return entry.future
     })
 
@@ -61,9 +68,11 @@ const onTimeSelect = (event) => {
     toast.add({severity: 'error', summary: 'Selected time is in the past', life: 3000})
     return
   }
-  toast.add({severity: 'info', summary: 'Time Selected', detail: event.data, life: 3000})
   const stationId = parseInt(route.params.stationId)
-  router.push({name: "main", query: {startStation: stationId, selectedTime: selectedTime.value}})
+  router.push({
+    name: "main",
+    query: {startStation: stationId, selectedBus: event.data.i, selectedTime: event.data.minutes}
+  })
 }
 
 const onBusNumberClicked = (event) => {
@@ -75,57 +84,120 @@ watch(busTable, (newBusTable) => {
   scrollToFirstValid(selectedDisplay.value, newBusTable)
 })
 
-const selectedDisplay = ref("Today")
 watch(selectedDisplay, (newDisplayTab) => {
+  if (isSelfUpdate) {
+    isSelfUpdate = false
+    return
+  }
   scrollToFirstValid(newDisplayTab, busTable.value)
 })
 
-const displayOptions = ref(['Today', isWeekend ? 'Weekdays' : 'Saturday / Sunday'])
+const processTimes = () => {
+  let now = new Date()
+  let minutes = now.getHours() * 60 + now.getMinutes()
+  let firstFutureOccurrence = -1
+  const newTimes = []
+
+  selectedStartStation.value.timetable.forEach((row) => {
+    const cloneRow = {...row}
+    cloneRow.future = false
+    if (isWeekend) {
+      if (cloneRow.day === 2 || cloneRow.day === 3 || cloneRow.day === 4) {
+        if (minutes < cloneRow.minutes) {
+          if (firstFutureOccurrence < 0) {
+            firstFutureOccurrence = cloneRow.minutes
+          }
+          cloneRow.future = true
+        }
+        newTimes.push(cloneRow)
+      }
+    } else {
+      if (cloneRow.day === 1) {
+        if (minutes < cloneRow.minutes) {
+          if (firstFutureOccurrence < 0) {
+            firstFutureOccurrence = cloneRow.minutes
+          }
+          cloneRow.future = true
+        }
+        newTimes.push(cloneRow)
+      }
+    }
+  })
+  currentTimes.value = newTimes
+
+  let fixFutures
+  fixFutures = () => {
+    now = new Date()
+    minutes = now.getHours() * 60 + now.getMinutes()
+    firstFutureOccurrence = -1
+    for (let i = 0; i < currentTimes.value.length; i++) {
+      if (minutes < currentTimes.value[i].minutes) {
+        if (firstFutureOccurrence < 0) {
+          firstFutureOccurrence = currentTimes.value[i].minutes
+        }
+      } else {
+        if (currentTimes.value[i].future) {
+          currentTimes.value[i].future = false
+        }
+      }
+    }
+    scrollToFirstValid(selectedDisplay.value, busTable.value)
+    setTimeout(fixFutures, ((firstFutureOccurrence - minutes) * 60 * 1000) - 500)
+  }
+
+  setTimeout(fixFutures, ((firstFutureOccurrence - minutes) * 60 * 1000) - 500)
+}
 
 onMounted(async () => {
   const stationId = parseInt(route.params.stationId)
-  let targetStation
-  // check if we know the station
-  if (busStationsMap.has(stationId)) {
-    targetStation = busStationsMap.get(stationId)
-  } else if (metroBusStationsMap.has(stationId)) {
-    targetStation = metroBusStationsMap.get(stationId)
-  } else {
-    console.error(`${stationId} station not found in the busStationsMap and metroBusStationsMap`)
+  if (isNaN(stationId)) {
+    toast.add({severity: 'error', summary: 'Selected station is not valid', life: 3000})
+    await router.push({name: "main"})
     return
   }
 
-  if (!targetStation) {
-    console.error("targetStation is null")
-    return
+  if (selectedDisplay.value !== "Today") {
+    isSelfUpdate = true
+    selectedDisplay.value = "Today"
   }
 
-  console.log('on select station', targetStation)
   if (selectedStartStation.value === null) {
-    selectedStartStation.value = targetStation
+    loadingInProgress.value = true
 
+    let targetStation
+    // check if we know the station
+    if (busStationsMap.has(stationId)) {
+      targetStation = busStationsMap.get(stationId)
+    } else if (metroBusStationsMap.has(stationId)) {
+      targetStation = metroBusStationsMap.get(stationId)
+    } else {
+      console.error(`${stationId} station not found in the busStationsMap and metroBusStationsMap`)
+      return
+    }
+
+    if (!targetStation) {
+      console.error("targetStation is null")
+      return
+    }
+
+    selectedStartStation.value = targetStation
     if (!selectedStartStation.value.timetable) {
-      console.log('loading time table', stationId)
-      loadingInProgress.value = true
       await loadStationTimetables(stationId, selectedStartStation.value, processTimetables, () => {
         console.error('error loading time tables', stationId)
         toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
         loadingInProgress.value = false
       })
-      console.log('timetable loaded', stationId)
-      loadingInProgress.value = false
-      if (!selectedDestinationStation.value) {
-        visible.value = true
-      }
-    } else {
-      if (!selectedDestinationStation.value) {
-        visible.value = true
-      }
     }
-  }
 
-  if (selectedDisplay.value !== "Today") {
-    selectedDisplay.value = "Today"
+    processTimes()
+    scrollToFirstValid(selectedDisplay.value, busTable.value)
+    loadingInProgress.value = false
+  } else if (selectedStartStation.value.i === stationId) {
+    processTimes()
+    scrollToFirstValid(selectedDisplay.value, busTable.value)
+  } else {
+    toast.add({severity: 'error', summary: 'Selected station is not valid', life: 3000})
+    await router.push({name: "main"})
   }
 })
 
@@ -149,29 +221,17 @@ const onDrawerClose = () => {
             <img src="/svgs/bus_stop_shelter.svg" style="height: 30px;width: 30px;"/>
           </div>
         </Tag>
-
         <h2 style="white-space: nowrap;margin-left:10px;margin-right:10px;color: #FED053;user-select: none;">
           {{ selectedStartStation.t ? 'Terminal' : 'Station' }}
           {{ selectedStartStation.n }}</h2>
-
-        <Marquee id="linesInStation" style="width: 100%">
-          <template v-for="bus in selectedStartStation.busses">
-            <div style="white-space: nowrap;text-align: center;vertical-align: center;">
-              <Tag
-                  :rounded="true"
-                  :value="bus.n"
-                  :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: bus.c, color:bus.tc }"/>
-              {{ bus.f }} - {{ bus.t }}
-            </div>
-          </template>
-        </Marquee>
+        <Marquee id="linesInStation" style="width: 100%" :items="selectedStartStation.busses"/>
       </div>
     </template>
 
     <template #default>
       <DataTable ref="busTable"
                  v-model:selection="selectedTime"
-                 :value="selectedDisplay==='Today' ? selectedStartStation.timetable : selectedStartStation.extraTimetable"
+                 :value="selectedDisplay==='Today' ? currentTimes : selectedStartStation.extraTimetable"
                  :selectionMode="selectedDisplay==='Today' ? 'single' : null"
                  scrollable
                  scrollHeight="flex"

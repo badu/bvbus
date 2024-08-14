@@ -28,7 +28,6 @@ export const service = (toast) => {
     }
 
     const loadStreetPoints = async (stationsPairIds, okHandler, errorHandler) => {
-        console.log(`loading ${stationsPairIds}`)
         await fetch(`./pt/${stationsPairIds}.json`).then((response) => {
             const contentType = response.headers.get("content-type")
             if (response.ok) {

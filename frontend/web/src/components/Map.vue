@@ -2,24 +2,25 @@
   <div id="map"></div>
 </template>
 <script setup>
-import {Feature} from "ol"
-import View from "ol/View.js"
-import {Tile as TileLayer, Vector as VectorLayer, VectorImage} from "ol/layer.js"
-import {Cluster, Vector as VectorSource, XYZ} from "ol/source.js"
-import {Fill, Icon, RegularShape, Stroke, Style, Text} from "ol/style.js"
-import CircleStyle from "ol/style/Circle.js"
+import {Feature} from 'ol'
+import View from 'ol/View.js'
+import {Tile as TileLayer, Vector as VectorLayer, VectorImage} from 'ol/layer.js'
+import {Cluster, Vector as VectorSource, XYZ} from 'ol/source.js'
+import {Fill, Icon, RegularShape, Stroke, Style, Text} from 'ol/style.js'
+import CircleStyle from 'ol/style/Circle.js'
 import OLMap from 'ol/Map.js'
 import {unByKey} from 'ol/Observable'
-import {inject, onMounted} from "vue"
-import {easeOut} from 'ol/easing'
-import {getVectorContext} from "ol/render"
-import {boundingExtent} from "ol/extent.js"
-import FlowLine from "ol-ext/style/FlowLine.js"
-import {LineString} from "ol/geom.js"
-import {fromLonLat} from "ol/proj.js"
-import {createStringXY} from "ol/coordinate.js"
-import {MousePosition} from "ol/control.js"
-import {useRoute, useRouter} from "vue-router"
+import {inject, onMounted} from 'vue'
+import {easeOut, linear} from 'ol/easing'
+import {getVectorContext} from 'ol/render'
+import {boundingExtent} from 'ol/extent.js'
+import FlowLine from 'ol-ext/style/FlowLine.js'
+import {LineString, Point} from 'ol/geom.js'
+import {createStringXY} from 'ol/coordinate.js'
+import {MousePosition} from 'ol/control.js'
+import {useRoute, useRouter} from 'vue-router'
+import {fromLonLat, transform} from 'ol/proj'
+import Path from "ol-ext/featureanimation/Path.js";
 
 const emit = defineEmits(['selectStation', 'deselectStartStation', 'deselectEndStation', 'terminalChooser'])
 
@@ -308,6 +309,10 @@ onMounted(async () => {
   })
 
   map.on('click', (e) => {
+    const clickedCoordinate = e.map.getEventCoordinate(e.originalEvent)
+    const gpsCoordinates = transform(clickedCoordinate, "EPSG:3857", "EPSG:4326")
+    console.log('map clicked at GPS', gpsCoordinates)
+
     clusterLayer.getFeatures(e.pixel).then((clickedFeatures) => {
       if (clickedFeatures.length) {
         const features = clickedFeatures[0].get('features')
@@ -485,17 +490,68 @@ const haversineDistance = ([lat1, lon1], [lat2, lon2]) => {
 
 const findNearbyMarkers = (userPosition) => {
   const nearbyMarkers = stationMarkers.filter(marker => {
-    return haversineDistance([userPosition.lat, userPosition.lon], [marker.get('lat'), marker.get('lon')]) < 0.5// 500m
+    return haversineDistance([userPosition.lat, userPosition.lon], [marker.get('lat'), marker.get('lon')]) < 0.1// 200m
   })
-  console.log('User\'s position:', userPosition)
-  console.log('Nearby markers:', nearbyMarkers)
+  return nearbyMarkers
 }
 
 const zoomOut = () => {
   view.animate({duration: 1000, center: mapCenter.value, zoom: mapZoom.value - 1})
 }
 
-defineExpose({displayTrajectory, displayGraph, findNearbyMarkers, zoomOut, displaySolution})
+const animateRoute = (trajectory, duration, busColor) => {
+  const triangle = new RegularShape({
+    radius: 14,
+    points: 3,
+    fill: new Fill({color: busColor}),
+    stroke: new Stroke({color: '#FED053', width: 2})
+  })
+
+  const styleTriangle = new Style({
+    image: triangle,
+    stroke: new Stroke({color: '#FED053', width: 2}),
+    fill: new Fill({color: busColor})
+  })
+
+  let currentCoords = []
+  for (let i = 0; i < trajectory.length; i++) {
+    currentCoords.push(fromLonLat([trajectory[i].ln, trajectory[i].lt]))
+  }
+
+  const lineString = new LineString(currentCoords)
+  const lineFeature = new Feature({geometry: lineString})
+  lineFeature['color'] = busColor
+  lineFeature.setId(`liveRoute`)
+  graphLines.push(lineFeature)
+
+  trajectorySource.clear()
+  trajectorySource.addFeatures(graphLines)
+
+  const anim = new Path({
+    path: lineString,
+    rotate: true,
+    duration: duration * 60 * 1000,
+  })
+
+  const feature = new Feature(new Point([0, 0]))
+  feature.setStyle(styleTriangle)
+
+  trajectoryLayer.animateFeature(feature, anim)
+}
+
+const clearTrajectory = () => {
+  trajectorySource.clear()
+}
+
+defineExpose({
+  displayTrajectory,
+  displayGraph,
+  findNearbyMarkers,
+  zoomOut,
+  displaySolution,
+  animateRoute,
+  clearTrajectory
+})
 </script>
 <style scoped>
 #map {

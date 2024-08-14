@@ -174,6 +174,7 @@ func TestMakeTrajectories(t *testing.T) {
 						case OSMPlatform, OSMPlatformEntryOnly, OSMPlatformExitOnly:
 							stats = append(stats, member.Ref)
 						case OSMStop, OSMStopEntryOnly, OSMStopExitOnly:
+
 							stops = append(stops, member.Ref)
 						}
 					case OSMWay:
@@ -361,6 +362,10 @@ func TestMakeTrajectories(t *testing.T) {
 					t.Logf("should create previous %d %q lat %f long %f board %t outside %t", data.Elements[0].ID, data.Elements[0].Tags["name"], data.Elements[0].Lat, data.Elements[0].Lon, data.Elements[0].Tags["departures_board"] == "realtime", len(data.Elements[0].Tags["fare_zone"]) > 0)
 				}
 
+				if prevStation.Id == 3708889555 && station.Id == 9710744131 {
+					t.Logf("Yes, there is")
+				}
+
 				if lastStationID == stopInfo.stationID {
 					t.Fatalf("what is going on here? %d => %q %s - %s %d out of %d", busID, busNames[busID], prevStation.Name, station.Name, i, len(trajectory))
 				}
@@ -413,7 +418,7 @@ func TestMakeTrajectories(t *testing.T) {
 					tx.Commit()
 					wroteDistance[key] = struct{}{}
 				} else {
-					t.Logf("%d points into database for %q between %q and %q", len(nodesKeeper), busNames[busID], prevStation.Name, station.Name)
+					//t.Logf("%d points into database for %q between %q and %q", len(nodesKeeper), busNames[busID], prevStation.Name, station.Name)
 				}
 
 				var sb strings.Builder
@@ -494,7 +499,7 @@ func TestMakeTrajectories(t *testing.T) {
 		}
 		data := Edge{Meters: distance, Minutes: minutes, FromStationID: fromStationID, ToStationID: toStationID}
 
-		t.Logf("distance %s - %s = %f meters %d minutes", stations[fromStationID].Name, stations[toStationID].Name, distance, minutes)
+		//t.Logf("distance %s - %s = %f meters %d minutes", stations[fromStationID].Name, stations[toStationID].Name, distance, minutes)
 
 		if writeToDatabase {
 			_, err = db.Exec(`UPDATE distances SET minutes = ? WHERE from_station_id = ? AND to_station_id = ?`, minutes, fromStationID, toStationID)
