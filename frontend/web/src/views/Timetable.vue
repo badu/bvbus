@@ -92,7 +92,7 @@ watch(selectedDisplay, (newDisplayTab) => {
   scrollToFirstValid(newDisplayTab, busTable.value)
 })
 
-const processTimes = () => {
+const loadCurrentTimeTable = () => {
   let now = new Date()
   let minutes = now.getHours() * 60 + now.getMinutes()
   let firstFutureOccurrence = -1
@@ -125,8 +125,8 @@ const processTimes = () => {
   })
   currentTimes.value = newTimes
 
-  let fixFutures
-  fixFutures = () => {
+  let decayFuture
+  decayFuture = () => {
     now = new Date()
     minutes = now.getHours() * 60 + now.getMinutes()
     firstFutureOccurrence = -1
@@ -142,10 +142,10 @@ const processTimes = () => {
       }
     }
     scrollToFirstValid(selectedDisplay.value, busTable.value)
-    setTimeout(fixFutures, ((firstFutureOccurrence - minutes) * 60 * 1000) - 500)
+    setTimeout(decayFuture, ((firstFutureOccurrence - minutes) * 60 * 1000) - 500)
   }
 
-  setTimeout(fixFutures, ((firstFutureOccurrence - minutes) * 60 * 1000) - 500)
+  setTimeout(decayFuture, ((firstFutureOccurrence - minutes) * 60 * 1000) - 500)
 }
 
 onMounted(async () => {
@@ -189,11 +189,11 @@ onMounted(async () => {
       })
     }
 
-    processTimes()
+    loadCurrentTimeTable()
     scrollToFirstValid(selectedDisplay.value, busTable.value)
     loadingInProgress.value = false
   } else if (selectedStartStation.value.i === stationId) {
-    processTimes()
+    loadCurrentTimeTable()
     scrollToFirstValid(selectedDisplay.value, busTable.value)
   } else {
     toast.add({severity: 'error', summary: 'Selected station is not valid', life: 3000})
@@ -256,7 +256,7 @@ const onDrawerClose = () => {
           </template>
         </Column>
 
-        <Column header="Time">
+        <Column header="Time" >
           <template #body="slotProps">
             <span
                 :style="slotProps.data.future ? 'color: #FED053;user-select: none;' : 'color: #3B3F46;user-select: none;'">

@@ -1,7 +1,6 @@
 <script>
 import BaseComponent from '@primevue/core/basecomponent'
-import SelectButtonStyle from 'primevue/selectbutton/style'
-
+import SelectButtonStyle from '@/components/select-button.style.ts'
 export default {
     name: 'BaseSelectButton',
     extends: BaseComponent,

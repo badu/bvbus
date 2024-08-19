@@ -1,8 +1,8 @@
 <template>
   <Portal>
-    <div v-if="containerVisible" :ref="maskRef" @mousedown="onMaskClick" :class="cx('mask')"
+    <div v-if="containerVisible" :ref="maskRef" :class="cx('mask')"
          :style="sx('mask', true, { position })" v-bind="ptm('mask')">
-      <transition name="p-drawer" @enter="onEnter" @after-enter="onAfterEnter" @before-leave="onBeforeLeave"
+      <transition name="p-drawer" @enter="onEnter" @before-leave="onBeforeLeave"
                   @leave="onLeave" @after-leave="onAfterLeave" appear v-bind="ptm('transition')">
         <div v-if="visible" :ref="containerRef" v-focustrap :class="cx('root')" role="complementary" :aria-modal="modal"
              v-bind="ptmi('root')">
@@ -15,13 +15,11 @@
                   type="button"
                   :class="cx('pcCloseButton')"
                   :aria-label="closeAriaLabel"
-                  :unstyled="unstyled"
                   @click="hide"
                   v-bind="closeButtonProps"
                   :pt="ptm('pcCloseButton')"
                   style="margin-right: 5px;margin-left: 5px;"
-                  data-pc-group-section="iconcontainer"
-              >
+                  data-pc-group-section="iconcontainer">
                 <template #icon="slotProps">
                   <slot name="closeicon">
                     <component :is="closeIcon ? 'span' : 'TimesIcon'" :class="[closeIcon, slotProps.class]"
@@ -33,11 +31,8 @@
                 <div v-if="header" :class="cx('title')" v-bind="ptm('title')">{{ header }}</div>
               </slot>
             </div>
-            <div :ref="contentRef" :class="cx('content')" v-bind="ptm('content')">
+            <div v-if="hasContent" :ref="contentRef" :class="cx('content')" v-bind="ptm('content')">
               <slot></slot>
-            </div>
-            <div :ref="footerContainerRef" :class="cx('footer')" v-bind="ptm('footer')">
-              <slot name="footer"></slot>
             </div>
           </template>
         </div>
@@ -47,7 +42,7 @@
 </template>
 
 <script>
-import {addClass, focus, blockBodyScroll, unblockBodyScroll} from '@primeuix/utils/dom'
+import {addClass, focus} from '@primeuix/utils/dom'
 import {ZIndex} from '@primeuix/utils/zindex'
 import TimesIcon from '@primevue/icons/times'
 import Button from 'primevue/button'
@@ -69,7 +64,6 @@ export default {
   mask: null,
   content: null,
   headerContainer: null,
-  footerContainer: null,
   closeButton: null,
   outsideClickListener: null,
   documentKeydownListener: null,
@@ -79,8 +73,6 @@ export default {
     }
   },
   beforeUnmount() {
-    this.disableDocumentSettings()
-
     if (this.mask && this.autoZIndex) {
       ZIndex.clear(this.mask)
     }
@@ -95,18 +87,13 @@ export default {
     onEnter() {
       this.$emit('show')
       this.focus()
-      this.bindDocumentKeyDownListener()
-
       if (this.autoZIndex) {
         ZIndex.set('modal', this.mask, this.baseZIndex || this.$primevue.config.zIndex.modal)
       }
     },
-    onAfterEnter() {
-      this.enableDocumentSettings()
-    },
     onBeforeLeave() {
       if (this.modal) {
-        !this.isUnstyled && addClass(this.mask, 'p-overlay-mask-leave')
+        addClass(this.mask, 'p-overlay-mask-leave')
       }
     },
     onLeave() {
@@ -116,10 +103,7 @@ export default {
       if (this.autoZIndex) {
         ZIndex.clear(this.mask)
       }
-
-      this.unbindDocumentKeyDownListener()
       this.containerVisible = false
-      this.disableDocumentSettings()
       this.$emit('after-hide')
     },
     focus() {
@@ -133,38 +117,43 @@ export default {
         focusTarget = this.$slots.default && findFocusableElement(this.container)
 
         if (!focusTarget) {
-          focusTarget = this.$slots.footer && findFocusableElement(this.footerContainer)
-
-          if (!focusTarget) {
-            focusTarget = this.closeButton
-          }
+          focusTarget = this.closeButton
         }
       }
 
       focusTarget && focus(focusTarget)
     },
-    enableDocumentSettings() {
-      if (this.blockScroll) {
-        blockBodyScroll()
-      }
-    },
-    disableDocumentSettings() {
-      this.unbindOutsideClickListener()
-
-      if (this.blockScroll) {
-        unblockBodyScroll()
-      }
-    },
-    onKeydown(event) {
-      if (event.code === 'Escape') {
-        this.hide()
-      }
-    },
     containerRef(el) {
       this.container = el
+      if (!el) {
+        return
+      }
+      if (this.position === 'full') {
+        return
+      }
+      if (this.mask) {
+        this.mask.style.height = `${this.container.offsetHeight}px`
+        if (this.position === 'bottom') {
+          this.mask.style.top = null
+          this.mask.style.bottom = `0`
+        }
+      }
     },
     maskRef(el) {
       this.mask = el
+      if (!el) {
+        return
+      }
+      if (this.position === 'full') {
+        return
+      }
+      if (this.container) {
+        this.mask.style.height = `${this.container.offsetHeight}px`
+        if (this.position === 'bottom') {
+          this.mask.style.top = null
+          this.mask.style.bottom = `0`
+        }
+      }
     },
     contentRef(el) {
       this.content = el
@@ -172,44 +161,9 @@ export default {
     headerContainerRef(el) {
       this.headerContainer = el
     },
-    footerContainerRef(el) {
-      this.footerContainer = el
-    },
     closeButtonRef(el) {
       this.closeButton = el ? el.$el : undefined
     },
-    bindDocumentKeyDownListener() {
-      if (!this.documentKeydownListener) {
-        this.documentKeydownListener = this.onKeydown
-        document.addEventListener('keydown', this.documentKeydownListener)
-      }
-    },
-    unbindDocumentKeyDownListener() {
-      if (this.documentKeydownListener) {
-        document.removeEventListener('keydown', this.documentKeydownListener)
-        this.documentKeydownListener = null
-      }
-    },
-    bindOutsideClickListener() {
-      if (!this.outsideClickListener) {
-        this.outsideClickListener = (event) => {
-          if (this.isOutsideClicked(event)) {
-            this.hide()
-          }
-        }
-
-        document.addEventListener('click', this.outsideClickListener)
-      }
-    },
-    unbindOutsideClickListener() {
-      if (this.outsideClickListener) {
-        document.removeEventListener('click', this.outsideClickListener)
-        this.outsideClickListener = null
-      }
-    },
-    isOutsideClicked(event) {
-      return this.container && !this.container.contains(event.target)
-    }
   },
   computed: {
     fullScreen() {

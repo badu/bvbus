@@ -3,13 +3,15 @@
     <div
         v-for="(item, index) in items"
         :key="index"
-        v-show="currentItem === index"
+        v-show="currentIndex === index"
         class="marquee-item">
       <Tag
           :rounded="true"
           :value="item.n"
           :style="{ minWidth: '40px',maxWidth:'40px', userSelect: 'none', fontFamily: 'TheLedDisplaySt', backgroundColor: item.c, color:item.tc }"/>
-        <span class="text" ref="text">{{ item.f }} - {{ item.t }}</span>
+      <div ref="mask" class="marquee-mask" :style="{ width: marqueeWidth > 0 ? marqueeWidth + 'px' : '100%' }">
+        <div ref="text" class="text" >{{ item.f }} - {{ item.t }}</div>
+      </div>
     </div>
   </div>
 </template>
@@ -24,18 +26,23 @@ export default {
   },
   data() {
     return {
-      currentItem: 0,
+      currentIndex: 0,
       marqueeWidth: 0,
       running: false,
+      hasInitialWidth: false,
+      marqueeInitialWidth: 0,
     }
   },
   mounted() {
-    this.running = true
-    this.startMarquee()
+    this.$nextTick(() => {
+      this.running = true
+      this.startMarquee()
+    })
   },
   unmounted() {
     this.running = false
   },
+
   methods: {
     startMarquee() {
       this.setMarqueeWidth()
@@ -43,8 +50,12 @@ export default {
     },
     setMarqueeWidth() {
       if (this.running) {
-        if (this.$refs.text && this.$refs.text.length === 1) {
-          this.marqueeWidth = this.$refs.text[0].offsetWidth
+        if (this.$refs) {
+          if (!this.hasInitialWidth) {
+            this.marqueeInitialWidth = this.$refs.mask[0].offsetWidth
+            this.hasInitialWidth = true
+          }
+          this.marqueeWidth = this.$refs.text[this.currentIndex % this.items.length].offsetWidth
         }
       }
     },
@@ -61,7 +72,7 @@ export default {
       if (!this.running) {
         return
       }
-      this.currentItem = (this.currentItem + 1) % this.items.length
+      this.currentIndex = (this.currentIndex + 1) % this.items.length
       setTimeout(this.startMarquee, 500)
     },
   },
@@ -86,20 +97,19 @@ export default {
   animation: slideIn 0.5s ease-in-out;
   text-align: center;
   vertical-align: center;
-
 }
 
 .text {
   display: inline-block;
   white-space: nowrap;
   color: #FED053;
-  animation: marquee 4s linear infinite;
   font-weight: 800;
+  animation: marquee 4s linear infinite;
 }
 
 @keyframes marquee {
   from {
-    transform: translateX(10%);
+    transform: translateX(50%);
   }
   to {
     transform: translateX(-100%);
@@ -113,5 +123,10 @@ export default {
   to {
     transform: translateY(0);
   }
+}
+
+.marquee-mask {
+  overflow: hidden;
+  white-space: nowrap;
 }
 </style>

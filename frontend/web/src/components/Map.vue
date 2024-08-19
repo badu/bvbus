@@ -11,7 +11,6 @@ import CircleStyle from 'ol/style/Circle.js'
 import OLMap from 'ol/Map.js'
 import {unByKey} from 'ol/Observable'
 import {inject, onMounted} from 'vue'
-import {easeOut, linear} from 'ol/easing'
 import {getVectorContext} from 'ol/render'
 import {boundingExtent} from 'ol/extent.js'
 import FlowLine from 'ol-ext/style/FlowLine.js'
@@ -20,7 +19,8 @@ import {createStringXY} from 'ol/coordinate.js'
 import {MousePosition} from 'ol/control.js'
 import {useRoute, useRouter} from 'vue-router'
 import {fromLonLat, transform} from 'ol/proj'
-import Path from "ol-ext/featureanimation/Path.js";
+import Path from "ol-ext/featureanimation/Path.js"
+import {easeOut} from 'ol/easing.js'
 
 const emit = defineEmits(['selectStation', 'deselectStartStation', 'deselectEndStation', 'terminalChooser'])
 
@@ -177,6 +177,21 @@ const trajectoryLayer = new VectorImage({
   }
 })
 
+const routeSource = new VectorSource()
+const routeLayer = new VectorLayer({
+  source: routeSource, style: function (feature, resolution) {
+    if (feature['color']) {
+      return new FlowLine({
+        color: feature['color'],
+        color2: feature['color'],
+        width: 6,
+        width2: 6,
+        arrow: 1,
+      })
+    }
+  }
+})
+
 const customTileLayer = new TileLayer({
   source: new XYZ({
     url: './{z}/{x}/{y}.png',//'http://localhost:8080/tiles/{z}/{x}/{y}.png',
@@ -277,7 +292,7 @@ onMounted(async () => {
 
   const map = new OLMap({
     target: 'map',
-    layers: [customTileLayer, clusterLayer, trajectoryLayer],
+    layers: [customTileLayer, clusterLayer, trajectoryLayer, routeLayer],
     view: view,
   })
 
@@ -522,10 +537,9 @@ const animateRoute = (trajectory, duration, busColor) => {
   const lineFeature = new Feature({geometry: lineString})
   lineFeature['color'] = busColor
   lineFeature.setId(`liveRoute`)
-  graphLines.push(lineFeature)
 
   trajectorySource.clear()
-  trajectorySource.addFeatures(graphLines)
+  trajectorySource.addFeature(lineFeature)
 
   const anim = new Path({
     path: lineString,
@@ -533,14 +547,24 @@ const animateRoute = (trajectory, duration, busColor) => {
     duration: duration * 60 * 1000,
   })
 
+  const featureRemoval = (e) => {
+    console.log('featureRemoval')
+    if (e.feature) {
+      trajectorySource.clear()
+      routeSource.removeFeature(e.feature)
+    }
+  }
+
+  anim.once('animationend', featureRemoval)
   const feature = new Feature(new Point([0, 0]))
   feature.setStyle(styleTriangle)
 
-  trajectoryLayer.animateFeature(feature, anim)
+  routeLayer.animateFeature(feature, anim)
 }
 
-const clearTrajectory = () => {
+const clearRoute = () => {
   trajectorySource.clear()
+  routeSource.clear()
 }
 
 defineExpose({
@@ -550,7 +574,7 @@ defineExpose({
   zoomOut,
   displaySolution,
   animateRoute,
-  clearTrajectory
+  clearRoute
 })
 </script>
 <style scoped>

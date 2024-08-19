@@ -342,7 +342,7 @@ const getUpperDrawerVisible = computed({
   },
   set(newValue) {
     if (!newValue) {
-      brasovMap.value.clearTrajectory()
+      brasovMap.value.clearRoute()
       router.replace({
         query: {
           ...route.query,
@@ -373,28 +373,6 @@ const getLowerDrawerVisible = computed({
     }
   }
 })
-
-const upperDrawer = ref(null)
-const adjustUpperDrawerHeight = () => {
-  nextTick(() => {
-    const drawer = upperDrawer.value
-    if (drawer) {
-      drawer.mask.style.height = `${drawer.container.offsetHeight}px`
-    }
-  })
-}
-
-const lowerDrawer = ref(null)
-const adjustLowerDrawerHeight = () => {
-  nextTick(() => {
-    const drawer = lowerDrawer.value
-    if (drawer) {
-      drawer.mask.style.height = `${drawer.container.offsetHeight}px`
-      drawer.mask.style.top = null
-      drawer.mask.style.bottom = `0`
-    }
-  })
-}
 
 const onUpperDrawerClicked = () => {
   if (selectedStartStation.value !== null) {
@@ -441,11 +419,10 @@ const onLowerDrawerClicked = () => {
       <router-view></router-view>
 
       <Drawer
-          ref="upperDrawer"
           v-model:visible="getUpperDrawerVisible"
           position="top"
           :modal="false"
-          @show="adjustUpperDrawerHeight">
+          :hasContent="false">
         <template #header>
           <h2 class="header" @click="onUpperDrawerClicked">
             Start : {{ selectedStartStation.n }}</h2>
@@ -453,11 +430,10 @@ const onLowerDrawerClicked = () => {
       </Drawer>
 
       <Drawer
-          ref="lowerDrawer"
           v-model:visible="getLowerDrawerVisible"
           position="bottom"
           :modal="false"
-          @show="adjustLowerDrawerHeight">
+          :hasContent="false">
         <template #header>
           <h2 class="header" @click="onLowerDrawerClicked">
             Destination : {{ selectedDestinationStation.n }}</h2>
