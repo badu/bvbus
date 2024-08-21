@@ -51,11 +51,13 @@ export default {
     setMarqueeWidth() {
       if (this.running) {
         if (this.$refs) {
-          if (!this.hasInitialWidth) {
-            this.marqueeInitialWidth = this.$refs.mask[0].offsetWidth
-            this.hasInitialWidth = true
+          if (this.$refs.mask && this.$refs.text) {
+            if (!this.hasInitialWidth) {
+              this.marqueeInitialWidth = this.$refs.mask[0].offsetWidth
+              this.hasInitialWidth = true
+            }
+            this.marqueeWidth = this.$refs.text[this.currentIndex % this.items.length].offsetWidth
           }
-          this.marqueeWidth = this.$refs.text[this.currentIndex % this.items.length].offsetWidth
         }
       }
     },

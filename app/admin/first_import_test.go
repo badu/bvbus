@@ -45,11 +45,11 @@ func TestFirstImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error deleting bus stops:%#v", err)
 	}
-	_, err = repo.DB.Exec("DELETE FROM street_points WHERE 1=1;")
+	_, err = repo.DB.Exec("DELETE FROM points WHERE 1=1;")
 	if err != nil {
 		t.Fatalf("error deleting street points:%#v", err)
 	}
-	_, err = repo.DB.Exec("DELETE FROM street_rels WHERE 1=1;")
+	_, err = repo.DB.Exec("DELETE FROM distances WHERE 1=1;")
 	if err != nil {
 		t.Fatalf("error deleting street rels:%#v", err)
 	}
@@ -77,13 +77,13 @@ func TestFirstImport(t *testing.T) {
 	}
 	defer stationsStmt.Close()
 
-	pointsStmt, err := tx.Prepare("INSERT INTO street_points(id, lat, lng) VALUES (?, ?, ?);")
+	pointsStmt, err := tx.Prepare("INSERT INTO points(id, lat, lng, idx, is_stop, from_station_id, to_station_id) VALUES (?, ?, ?, ?, ?, ?, ?);")
 	if err != nil {
 		t.Fatalf("error preparing street points statement:%#v", err)
 	}
 	defer pointsStmt.Close()
 
-	relsStmt, err := tx.Prepare("INSERT INTO street_rels(point_id, point_index, bus_id, is_stop) VALUES (?, ?, ?, ?);")
+	relsStmt, err := tx.Prepare("INSERT INTO distances(from_station_id, to_station_id, distance, minutes) VALUES (?, ?, ?, ?);")
 	if err != nil {
 		t.Fatalf("error preparing street rels statement:%#v", err)
 	}

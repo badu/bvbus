@@ -2,10 +2,10 @@ import urban_stations from "@/urban_stations.js"
 import urban_busses from "@/urban_busses.js"
 import metro_stations from "@/metro_stations.js"
 import metro_busses from "@/metro_busses.js"
-import distances from "@/distances.js"
 import {ref} from "vue";
 import {fromLonLat} from "ol/proj.js"
 import {Point} from "ol/geom.js"
+import {Feature} from "ol";
 
 const natSortStr = (str) => {
     if (!str) {
@@ -90,6 +90,7 @@ const loadingInProgress = ref(false)
 
 const terminalsList = ref([])
 const terminalsData = []
+const stationMarkers = []
 
 const nearbyStations = ref(null)
 
@@ -102,10 +103,6 @@ for (let i = 0; i < metro_busses.length; i++) {
     for (let j = 0; j < metro_busses[i].s.length; j++) {
         if (j > 0) {
             const key = `${metro_busses[i].s[j - 1]}-${metro_busses[i].s[j]}`
-            if (!distances.has(key)) {
-                // TODO : add metropolitan distances
-                // console.error('key not found in distances map for metropolitan bus', key, metro_busses[i])
-            }
         }
 
         // create data for station
@@ -142,18 +139,6 @@ for (let i = 0; i < urban_busses.length; i++) {
         if (j > 0) {
             // verify that we know the distance
             const key = `${urban_busses[i].s[j - 1]}-${urban_busses[i].s[j]}`
-            if (!distances.has(key)) {
-                let startStation, endStation
-                for (let k = 0; k < urban_stations.length; k++) {
-                    if (urban_stations[k].i === urban_busses[i].s[j - 1]) {
-                        startStation = urban_stations[k]
-                    }
-                    if (urban_stations[k].i === urban_busses[i].s[j]) {
-                        endStation = urban_stations[k]
-                    }
-                }
-                console.error('key not found in distances map for urban bus', key, startStation.n, endStation.n, urban_busses[i].i)
-            }
         }
 
         // create data for stations
@@ -211,6 +196,16 @@ for (let i = 0; i < urban_stations.length; i++) {
     urban_stations[i].coords = fromLonLat([urban_stations[i].ln, urban_stations[i].lt])
     urban_stations[i].point = new Point(urban_stations[i].coords)
     urban_stations[i].busses = []
+    if (!urban_stations[i].t) {
+        const marker = new Feature({geometry: urban_stations[i].point})
+        marker.setId(urban_stations[i].i)
+        marker.set('stationName', urban_stations[i].n)
+        marker.set('stationStreet', urban_stations[i].s)
+        marker.set('lat', urban_stations[i].lt)
+        marker.set('lon', urban_stations[i].ln)
+        urban_stations[i].marker = marker
+        stationMarkers.push(marker)
+    }
     const stationId = urban_stations[i].i
 
     if (bussesInStations.has(stationId)) {
@@ -250,6 +245,15 @@ for (const [terminalName, terminal] of terminalNames) {
             console.error("choice not found in stations and metropolitan stations where station id =", terminal.stationIds[i])
         }
     }
+
+    const marker = new Feature({geometry: terminal.point})
+    marker.set('stationName', terminal.n)
+    marker.set('stationStreet', terminal.s)
+    marker.set('lat', terminal.lt)
+    marker.set('lon', terminal.ln)
+    marker.set('isTerminal', true)
+    marker.setId(terminal.i)
+    stationMarkers.push(marker)
 
     terminalsData.push(terminal)
 }
@@ -342,5 +346,6 @@ export const store = () => {
         streetPoints,
         terminalNames,
         nearbyStations,
+        stationMarkers,
     }
 }

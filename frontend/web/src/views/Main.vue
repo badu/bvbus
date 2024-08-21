@@ -1,7 +1,6 @@
 <script setup>
-import {computed, inject, onMounted, ref, watch, nextTick} from "vue"
+import {computed, inject, onMounted, ref, watch} from "vue"
 import {useRoute, useRouter} from 'vue-router'
-import urban_busses from "@/urban_busses.js";
 
 const router = useRouter()
 const route = useRoute()
@@ -9,7 +8,6 @@ const toast = inject('toast')
 const selectedStartStation = inject('selectedStartStation')
 const selectedDestinationStation = inject('selectedDestinationStation')
 const loadingInProgress = inject('loadingInProgress')
-const brasovMap = ref(null)
 const travelRoute = inject('travelRoute')
 const loadStreetPoints = inject('loadStreetPoints')
 const busStationsMap = inject('busStationsMap')
@@ -19,6 +17,8 @@ const loadStationTimetables = inject('loadStationTimetables')
 const processTimetables = inject('processTimetables')
 const streetPoints = inject('streetPoints')
 const terminalsData = inject('terminalsData')
+
+let brasovMap = ref(null)
 
 const loadAndDisplayGraph = async () => {
   await fetch(`./graph.json`).then((response) => {
@@ -321,16 +321,6 @@ onMounted(async () => {
       }
     }
   })
-
-  router.beforeResolve((to, from, next) => {
-    if (to.name) {
-      //console.log('beforeResolve TO', to)
-      //console.log('beforeResolve FROM', from)
-      //console.log('beforeResolve NEXT', next)
-    }
-    next()
-  })
-
 })
 
 const getUpperDrawerVisible = computed({
@@ -366,7 +356,7 @@ const getLowerDrawerVisible = computed({
   },
   set(newValue) {
     if (!newValue) {
-      brasovMap.value.clearTrajectory()
+      brasovMap.value.clearRoute()
       router.replace({query: {...route.query, endStation: undefined}})
       selectedDestinationStation.value = null
       return
@@ -379,6 +369,7 @@ const onUpperDrawerClicked = () => {
     router.push(`/timetable/${selectedStartStation.value.i}`)
   }
 }
+
 const onLowerDrawerClicked = () => {
   if (selectedStartStation.value !== null && selectedDestinationStation.value !== null) {
     router.push(`/path/${selectedStartStation.value.i}/${selectedDestinationStation.value.i}`)

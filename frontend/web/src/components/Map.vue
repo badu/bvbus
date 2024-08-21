@@ -10,7 +10,7 @@ import {Fill, Icon, RegularShape, Stroke, Style, Text} from 'ol/style.js'
 import CircleStyle from 'ol/style/Circle.js'
 import OLMap from 'ol/Map.js'
 import {unByKey} from 'ol/Observable'
-import {inject, onMounted} from 'vue'
+import {inject, onMounted, nextTick} from 'vue'
 import {getVectorContext} from 'ol/render'
 import {boundingExtent} from 'ol/extent.js'
 import FlowLine from 'ol-ext/style/FlowLine.js'
@@ -33,7 +33,7 @@ const mapZoom = inject('mapZoom')
 const maxZoom = inject('maxZoom')
 const loadingInProgress = inject('loadingInProgress')
 
-const busStations = inject('busStations')
+const stationMarkers = inject('stationMarkers')
 const busStationsMap = inject('busStationsMap')
 const metroBusStationsMap = inject('metroBusStationsMap')
 const terminalsData = inject('terminalsData')
@@ -260,35 +260,12 @@ const flashMarker = (map, marker) => {
   listenerKey = clusterLayer.on('postrender', animate)
 }
 
-const stationMarkers = []
 const graphLines = []
 const mousePositionControl = new MousePosition({coordinateFormat: createStringXY(4), projection: 'EPSG:4326'})
 
 onMounted(async () => {
   let initDone = false
 
-  busStations.value.forEach((station) => {
-    if (!station.t) {
-      const marker = new Feature({geometry: station.point})
-      marker.setId(station.i)
-      marker.set('stationName', station.n)
-      marker.set('stationStreet', station.s)
-      marker.set('lat', station.lt)
-      marker.set('lon', station.ln)
-      stationMarkers.push(marker)
-    }
-  })
-
-  for (let i = 0; i < terminalsData.length; i++) {
-    const marker = new Feature({geometry: terminalsData[i].point})
-    marker.set('stationName', terminalsData[i].n)
-    marker.set('stationStreet', terminalsData[i].s)
-    marker.set('lat', terminalsData[i].lt)
-    marker.set('lon', terminalsData[i].ln)
-    marker.set('isTerminal', true)
-    marker.setId(terminalsData[i].i)
-    stationMarkers.push(marker)
-  }
 
   const map = new OLMap({
     target: 'map',
@@ -308,9 +285,11 @@ onMounted(async () => {
 
   map.on('loadend', function () {
     if (!initDone) {
-      clusterSource.clear()
-      clusterSource.addFeatures(stationMarkers)
-      initDone = true
+      nextTick(() => {
+        clusterSource.clear()
+        clusterSource.addFeatures(stationMarkers)
+        initDone = true
+      })
     }
     loadingInProgress.value = false
   })
@@ -504,10 +483,9 @@ const haversineDistance = ([lat1, lon1], [lat2, lon2]) => {
 }
 
 const findNearbyMarkers = (userPosition) => {
-  const nearbyMarkers = stationMarkers.filter(marker => {
+  return stationMarkers.filter(marker => {
     return haversineDistance([userPosition.lat, userPosition.lon], [marker.get('lat'), marker.get('lon')]) < 0.1// 200m
   })
-  return nearbyMarkers
 }
 
 const zoomOut = () => {

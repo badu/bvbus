@@ -1,6 +1,6 @@
 <script setup>
-import {onMounted, ref, inject} from "vue";
-import {useRoute, useRouter} from "vue-router";
+import {onMounted, ref, inject} from "vue"
+import {useRoute, useRouter} from "vue-router"
 
 const toast = inject('toast')
 
@@ -10,7 +10,7 @@ const loadDirectPathFinder = inject('loadDirectPathFinder')
 const loadStreetPoints = inject('loadStreetPoints')
 const loadStationTimetables = inject('loadStationTimetables')
 
-const busLinesMap=inject('busLinesMap')
+const busLinesMap = inject('busLinesMap')
 const selectedStartStation = inject('selectedStartStation')
 const selectedDestinationStation = inject('selectedDestinationStation')
 const streetPoints = inject('streetPoints')
@@ -22,8 +22,10 @@ const processTimetables = inject('processTimetables')
 const busStationsMap = inject('busStationsMap')
 const metroBusStationsMap = inject('metroBusStationsMap')
 
-const visible = ref(true)
+const graph = inject('graph')
+const stationsAndBusses = inject('stationsAndBusses')
 
+const visible = ref(true)
 const route = useRoute()
 const router = useRouter()
 
@@ -70,19 +72,25 @@ const getBussesIdsBetweenStations = (startStation, endStation) => {
   return busses
 }
 
+const currentRoute = ref([])
+const selectedHop = ref(null)
+
+
 const findBestTimes = (stations, finalStation) => {
+  console.log('towards',finalStation)
+
   const now = new Date()
   let currentTime = now.getHours() * 60 + now.getMinutes()
   let currentBus = null
 
   let nextDepartureTime = getNextDepartureTime(currentTime, stations[0].timetable, currentBus)
-  if (nextDepartureTime === null || nextDepartureTime === undefined ) {
+  if (nextDepartureTime === null || nextDepartureTime === undefined) {
     console.error("no bus found at departure time")
     return
   } else if (nextDepartureTime && !busLinesMap.has(nextDepartureTime.i)) {
     console.error("bus not found in map")
     return
-  }else if (!nextDepartureTime){
+  } else if (!nextDepartureTime) {
     console.error("ha-ha-ha : check the code logic (javascript rules!!!) - nextDepartureTime !== null but undefined")
     return
   }
@@ -95,12 +103,14 @@ const findBestTimes = (stations, finalStation) => {
     if (stationIndex < 0) {
       const dropOffTime = getNextDepartureTime(currentTime, stations[i - 1].timetable, currentBus.i)
       console.log(`${i} drop off bus ${currentBus.n} station ${stations[i - 1].n} ${stations[i - 1].i} arrival ${dropOffTime.time}`)
+      currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: dropOffTime.time, station: stations[i-1].n, op:'hop off'})
       const bussesIds = getBussesIdsBetweenStations(stations[i - 1].i, stations[i].i)
       const next = getNextDepartureTimeForBusses(currentTime, stations[i - 1].timetable, bussesIds)
       if (next !== null) {
         currentBus = busLinesMap.get(next.i)
         currentTime = next.minutes
         console.log(`${i} hop on bus ${currentBus.n} station ${stations[i - 1].n} ${stations[i - 1].i} arrival ${next.time}`)
+        currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: dropOffTime.time, station: stations[i-1].n, op:'hop on'})
       } else {
         // result is in "extraTimetable"
         console.error(`${i} no busses found between`, stations[i - 1].n, stations[i].n, stations[i - 1].i, stations[i].i, bussesIds)
@@ -118,6 +128,7 @@ const findBestTimes = (stations, finalStation) => {
     }
     currentTime = nextDepartureTime.minutes
     console.log(`${i} bus ${currentBus.n} station ${stations[i].n} ${stations[i].i} arrival ${nextDepartureTime.time}`)
+    currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: nextDepartureTime.time, station: stations[i].n, op:'ride'})
   }
 
   edges.push({f: stations[stations.length - 1].i, t: finalStation.i, c: currentBus.c})
@@ -125,6 +136,7 @@ const findBestTimes = (stations, finalStation) => {
   const dropOffTime = getNextDepartureTime(currentTime, finalStation.timetable, currentBus.i)
   if (dropOffTime !== null) {
     console.log(`final drop off bus ${currentBus.n} station ${finalStation.n} ${finalStation.i} arrival ${dropOffTime.time}`)
+    currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: dropOffTime.time, station: finalStation.n, op:'hop off'})
     currentTime = dropOffTime.minutes
   } else {
     if (!currentBus.si) {
@@ -152,6 +164,7 @@ const findBestTimes = (stations, finalStation) => {
             const dropOffTime = getNextDepartureTime(currentTime, value.timetable, siblingBus.i)
             if (dropOffTime !== null) {
               console.log(`final drop off sibling bus ${currentBus.n} station ${value.n} ${value.i} arrival ${dropOffTime.time}`)
+              currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: dropOffTime.time})
               currentTime = dropOffTime.minutes
             } else {
               console.error("error finding next departure time of the sibling bus", siblingBus.i, finalStation.i)
@@ -171,165 +184,114 @@ const findBestTimes = (stations, finalStation) => {
     console.log('arrival', hours, minutes)
   }
 
+  console.log('route',currentRoute.value)
+
   return edges
 }
 
-const loadPathFinder = async () => {
-  const startStationId = selectedStartStation.value.i
-  const endStationId = selectedDestinationStation.value.i
-  await loadDirectPathFinder(startStationId, async (data) => {
-    for (let i = 0; i < data.length; i++) {
-      if (endStationId !== data[i].t) {
-        continue
-      }
+const makeRoute = async (startStationId, endStationId) => {
+  const solution = graph.findRoute(startStationId, endStationId)
 
-      if (data[i].cross) {
-        console.log('just cross the god damn street, ok?')
-        return
-      }
+  const stations = []
+  const promises = []
+  const nodes = []
+  const edges = []
 
-      if (!data[i].s) {
-        console.error('target station has no solutions array')
-        return
-      }
-
-      const stations = []
-      const promises = []
-      const nodes = []
-      const edges = []
-
-      stations.push(selectedStartStation.value)
-      nodes.push(startStationId)
-
-      for (let j = 0; j < data[i].s.length; j++) {
-        const solution = data[i].s[j]
-        if (!solution.s || solution.s.length === 0) {
-          console.error('solution has no stations array')
-          return
-        }
-
-        console.log(`solution ${j + 1} : ${selectedStartStation.value.n} to ${selectedDestinationStation.value.n} [${startStationId}-${endStationId}]`)
-        console.log(`solution ${j + 1} => `, solution.s)
-
-        for (let k = 0; k < solution.s.length; k++) {
-          const stationId = solution.s[k]
-
-          if (k === 0) {
-            const pointsKey = `${startStationId}-${solution.s[k]}`
-            if (!streetPoints.has(pointsKey)) {
-              promises.push(
-                  loadStreetPoints(pointsKey, (data) => {
-                    streetPoints.set(pointsKey, data)
-                    edges.push({f: `${startStationId}`, t: `${solution.s[k]}`, d: data})
-                  }, () => {
-                    console.error(`error loading street points ${pointsKey}`)
-                  })
-              )
-            } else {
-              edges.push({
-                f: `${startStationId}`,
-                t: `${solution.s[k]}`,
-                d: streetPoints.get(pointsKey)
-              })
-            }
-          } else if (k < solution.s.length - 1) {
-            const pointsKey = `${solution.s[k - 1]}-${solution.s[k]}`
-            if (!streetPoints.has(pointsKey)) {
-              promises.push(
-                  loadStreetPoints(pointsKey, (data) => {
-                    streetPoints.set(pointsKey, data)
-                    edges.push({f: `${solution.s[k - 1]}`, t: `${solution.s[k]}`, d: data})
-                  }, () => {
-                    console.error(`error loading street points ${pointsKey}`)
-                  })
-              )
-            } else {
-              edges.push({
-                f: `${solution.s[k - 1]}`,
-                t: `${solution.s[k]}`,
-                d: streetPoints.get(pointsKey)
-              })
-            }
-          }
-
-          let targetStation
-          if (!busStationsMap.has(stationId)) {
-            if (!metroBusStationsMap.has(stationId)) {
-              console.error(`could not find target station ${stationId} in bus stations map`)
-              return
-            } else {
-              targetStation = metroBusStationsMap.get(stationId)
-            }
-          } else {
-            targetStation = busStationsMap.get(stationId)
-          }
-
-          nodes.push(stationId)
-          stations.push(targetStation)
-          promises.push(
-              loadStationTimetables(stationId, targetStation, processTimetables, () => {
-                console.error('error loading time tables', stationId)
-                toast.add({
-                  severity: 'error',
-                  summary: 'Error loading timetables',
-                  life: 3000
-                })
-                loadingInProgress.value = false
-              })
-          )
-        }
-
-        if (selectedDestinationStation.value.t) {
-          console.log('YES, destination is a terminal', terminalNames[selectedDestinationStation.value.n])
-        }
-
-        const pointsKey = `${solution.s[solution.s.length - 1]}-${endStationId}`
-        if (!streetPoints.has(pointsKey)) {
-          promises.push(
-              loadStreetPoints(`${solution.s[solution.s.length - 1]}-${endStationId}`, (data) => {
-                streetPoints.set(pointsKey, data)
-                edges.push({f: `${solution.s[solution.s.length - 1]}`, t: `${endStationId}`, d: data})
-              }, () => {
-                console.error(`error loading street points ${pointsKey}`)
-              })
-          )
-        } else {
-          edges.push({
-            f: `${solution.s[solution.s.length - 1]}`,
-            t: `${endStationId}`,
-            d: streetPoints.get(pointsKey)
+  if (!selectedStartStation.value.timetable) {
+    promises.push(
+        loadStationTimetables(selectedStartStation.value.i, selectedStartStation.value, processTimetables, () => {
+          console.error('error loading time tables', selectedStartStation.value.i)
+          toast.add({
+            severity: 'error',
+            summary: `Error loading timetables for ${selectedStartStation.value.n}`,
+            life: 3000
           })
-        }
+          loadingInProgress.value = false
+        })
+    )
+  }
+
+  stations.push(selectedStartStation.value)
+  nodes.push(startStationId)
+
+  for (let i = 1; i < solution.length; i++) {
+    const fromStationId = solution[i - 1]
+    const toStationId = solution[i]
+    const stationsKey = `${fromStationId}-${toStationId}`
+
+    // lookup target station
+    let targetStation
+    if (!busStationsMap.has(toStationId)) {
+      if (!metroBusStationsMap.has(toStationId)) {
+        console.error(`could not find target station ${toStationId} in bus stations map`)
+        return
+      } else {
+        targetStation = metroBusStationsMap.get(toStationId)
       }
+    } else {
+      targetStation = busStationsMap.get(toStationId)
+    }
 
-      nodes.push(selectedDestinationStation.value.i)
-
+    // lookup we have street points
+    if (!streetPoints.has(stationsKey)) {
       promises.push(
-          loadStationTimetables(selectedDestinationStation.value.i, selectedDestinationStation.value, processTimetables, () => {
-            console.error('error loading time tables', selectedDestinationStation.value.i)
-            toast.add({severity: 'error', summary: 'Error loading timetables', life: 3000})
+          loadStreetPoints(stationsKey, (data) => {
+            streetPoints.set(stationsKey, data)
+            edges.push({f: fromStationId, t: toStationId, d: data})
+          }, () => {
+            console.error(`error loading street points ${stationsKey}`)
+          })
+      )
+    } else {
+      edges.push({
+        f: fromStationId,
+        t: toStationId,
+        d: streetPoints.get(stationsKey)
+      })
+    }
+
+    // lookup target station has timetable
+    if (!targetStation.timetable) {
+      promises.push(
+          loadStationTimetables(toStationId, targetStation, processTimetables, () => {
+            console.error('error loading time tables', toStationId)
+            toast.add({
+              severity: 'error',
+              summary: `Error loading timetables for ${targetStation.n}`,
+              life: 3000
+            })
             loadingInProgress.value = false
           })
       )
-
-      await Promise.all(promises)
-
-      findBestTimes(stations, selectedDestinationStation.value)
-      if (!travelRoute.value) {
-        travelRoute.value = {}
-      }
-      travelRoute.value.nodes = nodes
-      travelRoute.value.edges = edges
     }
-  }, () => {
-    toast.add({severity: 'error', summary: 'Error loading pathfinding', life: 3000})
-    loadingInProgress.value = false
-  })
+
+    stations.push(targetStation)
+    nodes.push(toStationId)
+
+    // if there are no busses between fromStationId and toStationId, toStationId is probably a terminal
+    if (!stationsAndBusses.has(stationsKey)) {
+      console.error(`stations key ${stationsKey} was not found while looking for busses ids`, targetStation)
+      continue
+    }
+
+    const busses = stationsAndBusses.get(stationsKey)
+
+    console.log('station', targetStation.i, targetStation.n, stationsKey, busses)
+
+  }
+
+  await Promise.all(promises)
+
+  findBestTimes(stations, selectedDestinationStation.value)
+  if (!travelRoute.value) {
+    travelRoute.value = {}
+  }
+  travelRoute.value.nodes = nodes
+  travelRoute.value.edges = edges
 }
 
 onMounted(async () => {
   const startStationId = parseInt(route.params.startStationId)
-  const endStationId = parseInt(route.params.endStationId)
   if (!selectedStartStation.value) {
     let targetStation
     if (!busStationsMap.has(startStationId)) {
@@ -344,6 +306,8 @@ onMounted(async () => {
     }
     selectedStartStation.value = targetStation
   }
+
+  const endStationId = parseInt(route.params.endStationId)
   if (!selectedDestinationStation.value) {
     let targetStation
     if (!busStationsMap.has(endStationId)) {
@@ -358,13 +322,10 @@ onMounted(async () => {
     }
     selectedDestinationStation.value = targetStation
   }
-  await loadPathFinder()
+
+  await makeRoute(startStationId, endStationId)
 })
 
-const solutionsOptions = ref([])
-const currentHops = ref([])
-const selectedSolution = ref(null)
-const selectedHop = ref(null)
 
 const onDrawerClose = () => {
   const startStationId = parseInt(route.params.startStationId)
@@ -397,21 +358,12 @@ const onDrawerClose = () => {
     </template>
 
     <template #default>
-      <DataTable ref="busTable"
-                 v-model:selection="selectedHop"
-                 :value="currentHops"
+      <DataTable v-model:selection="selectedHop"
+                 :value="currentRoute"
                  :selectionMode="'single'"
                  scrollable
                  scrollHeight="flex"
                  style="background-color: #1E232B">
-
-        <template #header>
-          <SelectButton
-              v-model="selectedSolution"
-              :options="solutionsOptions"
-              aria-labelledby="basic"
-              style="display: flex;width: 100%;"/>
-        </template>
 
         <Column header="Bus" style="color: #FED053;user-select: none;">
           <template #body="slotProps">
@@ -422,10 +374,12 @@ const onDrawerClose = () => {
           </template>
         </Column>
 
+        <Column header="Station" field="station" />
+        <Column header="Op" field="op" />
+
         <Column header="Time">
           <template #body="slotProps">
-            <span
-                :style="slotProps.data.future ? 'color: #FED053;user-select: none;' : 'color: #3B3F46;user-select: none;'">
+            <span style="color: #FED053;user-select: none;">
               {{ slotProps.data.time }}
             </span>
           </template>

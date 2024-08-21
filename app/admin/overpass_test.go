@@ -362,10 +362,6 @@ func TestMakeTrajectories(t *testing.T) {
 					t.Logf("should create previous %d %q lat %f long %f board %t outside %t", data.Elements[0].ID, data.Elements[0].Tags["name"], data.Elements[0].Lat, data.Elements[0].Lon, data.Elements[0].Tags["departures_board"] == "realtime", len(data.Elements[0].Tags["fare_zone"]) > 0)
 				}
 
-				if prevStation.Id == 3708889555 && station.Id == 9710744131 {
-					t.Logf("Yes, there is")
-				}
-
 				if lastStationID == stopInfo.stationID {
 					t.Fatalf("what is going on here? %d => %q %s - %s %d out of %d", busID, busNames[busID], prevStation.Name, station.Name, i, len(trajectory))
 				}
@@ -470,7 +466,13 @@ func TestMakeTrajectories(t *testing.T) {
 		}
 	}
 
+	type NewLinks struct {
+		ID     int64
+		Meters float64
+	}
+
 	sortedResult := make([]*Edge, 0)
+	newDists := make(map[int64][]NewLinks)
 	for stationKey, distance := range stationsDistances {
 		busID, has := singleBusKey[stationKey]
 		if !has {
@@ -480,8 +482,14 @@ func TestMakeTrajectories(t *testing.T) {
 		parts := strings.Split(stationKey, "-")
 		fromStationIDInt, _ := strconv.Atoi(parts[0])
 		fromStationID := int64(fromStationIDInt)
+
+		if _, hasDist := newDists[fromStationID]; !hasDist {
+			newDists[fromStationID] = make([]NewLinks, 0)
+		}
+
 		toStationIDInt, _ := strconv.Atoi(parts[1])
 		toStationID := int64(toStationIDInt)
+		newDists[fromStationID] = append(newDists[fromStationID], NewLinks{ID: toStationID, Meters: distance})
 
 		var firstTime uint16
 		err = db.QueryRow(`SELECT enc_time FROM time_tables WHERE station_id = ? AND bus_id = ? LIMIT 1;`, fromStationID, busID).Scan(&firstTime)
@@ -515,16 +523,31 @@ func TestMakeTrajectories(t *testing.T) {
 
 	if writeFiles {
 		var sb strings.Builder
-		sb.WriteString("const distances = new Map();\n")
-		for _, measurement := range sortedResult {
-			key := fmt.Sprintf("%d-%d", measurement.FromStationID, measurement.ToStationID)
-			sb.WriteString(fmt.Sprintf("distances.set(%q,{%q:%f,%q:%d})\n", key, "d", measurement.Meters, "m", measurement.Minutes))
+		sb.WriteString("const distances = [\n")
+		c := 0
+		for fromStationID, otherStations := range newDists {
+			if c > 0 {
+				sb.WriteRune(',')
+				sb.WriteRune('\n')
+			}
+			sb.WriteString(fmt.Sprintf("{%q:%d,%q:[", "i", fromStationID, "s"))
+			for i, data := range otherStations {
+				if i > 0 {
+					sb.WriteRune(',')
+				}
+
+				sb.WriteString(fmt.Sprintf("{%q:%d,%q:%f}", "t", data.ID, "m", data.Meters))
+			}
+			sb.WriteRune(']')
+			sb.WriteRune('}')
+			c++
 		}
-		sb.WriteString("export default distances;")
+		sb.WriteString("]\nexport default distances;\n")
 
 		err = os.WriteFile("./../../frontend/web/src/distances.js", []byte(sb.String()), 0644)
 		if err != nil {
 			t.Fatalf("error writing distances.js : %#v", err)
 		}
 	}
+
 }

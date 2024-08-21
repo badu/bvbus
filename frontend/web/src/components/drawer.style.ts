@@ -53,4 +53,3 @@ var DrawerStyle = BaseStyle.extend({
 });
 
 export { DrawerStyle as default };
-//# sourceMappingURL=index.mjs.map

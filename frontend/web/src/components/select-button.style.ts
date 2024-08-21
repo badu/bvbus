@@ -19,4 +19,3 @@ var SelectButtonStyle = BaseStyle.extend({
 });
 
 export { SelectButtonStyle as default };
-//# sourceMappingURL=index.mjs.map
