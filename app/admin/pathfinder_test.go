@@ -168,7 +168,7 @@ func TestPathFinderWithNum(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
+	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("Error opening SQLite database: %v", err)
 	}

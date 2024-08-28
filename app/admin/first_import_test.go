@@ -28,7 +28,7 @@ func TestFirstImport(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error creating repository:%#v", err)
 	}
@@ -104,169 +104,172 @@ func TestFirstImport(t *testing.T) {
 	relationStops := make(map[int64][]Member)
 	subRels := make(map[int64][]int64)
 	for {
-		if v, err := decoder.Decode(); err == io.EOF {
+		v, err := decoder.Decode()
+
+		if err == io.EOF {
 			break
 		} else if err != nil {
 			t.Fatalf("error decoding PBF:%#v", err)
-		} else {
-			switch v := v.(type) {
-			case *osmpbf.Node:
-				node := Node{ID: v.ID, Lat: v.Lat, Lon: v.Lon}
-				uniqueNodes[v.ID] = node
-				if v.Tags["network"] != "RAT Brașov" {
-					continue
-				}
+		}
 
-				station := Station{
-					OSMID: v.ID,
-					Lat:   v.Lat,
-					Lon:   v.Lon,
-				}
-				for k, tv := range v.Tags {
-					switch k {
-					case "departures_board":
-						if tv == "realtime" {
-							station.HasBoard = true
-						}
-					case "fare_zone":
-						if len(tv) > 0 {
-							station.IsOutsideCity = true
-						}
-					case "name":
-						station.Name = tv
+		switch v := v.(type) {
+		case *osmpbf.Node:
+			node := Node{ID: v.ID, Lat: v.Lat, Lon: v.Lon}
+			uniqueNodes[v.ID] = node
+			if v.Tags["network"] != "RAT Brașov" {
+				continue
+			}
+
+			station := Station{
+				OSMID: v.ID,
+				Lat:   v.Lat,
+				Lon:   v.Lon,
+			}
+			for k, tv := range v.Tags {
+				switch k {
+				case "departures_board":
+					if tv == "realtime" {
+						station.HasBoard = true
 					}
-				}
-
-				station.Name = replaceDiacritics(station.Name)
-				_, err = stationsStmt.Exec(station.OSMID, station.Name, station.Lat, station.Lon, station.IsOutsideCity, station.HasBoard)
-				if err != nil {
-					if err := tx.Rollback(); err != nil {
-						t.Fatalf("error rolling back transaction on insert station :%#v", err)
+				case "fare_zone":
+					if len(tv) > 0 {
+						station.IsOutsideCity = true
 					}
-					t.Fatalf("error inserting station :%#v", err)
-				}
-
-				stations[station.OSMID] = &station
-				// logger.Info("station created", "name", station.Name, "metropolitan", station.IsOutsideCity)
-			case *osmpbf.Way:
-				uniqueWays[v.ID] = Node{Nodes: v.NodeIDs, ID: v.ID, Tags: v.Tags}
-			case *osmpbf.Relation:
-				if v.Tags["network"] != "RAT Brașov" {
-					continue
-				}
-
-				subRels[v.ID] = make([]int64, 0)
-				for _, member := range v.Members {
-					subRels[v.ID] = append(subRels[v.ID], member.ID)
-				}
-
-				isValid := false
-				line := Busline{OSMID: v.ID}
-
-				overriddenLine := ""
-				for k, tv := range v.Tags {
-					switch k {
-					case "name":
-						cleanName := strings.ReplaceAll(tv, "=>", "-")
-						cleanName = replaceDiacritics(cleanName)
-						line.Name = cleanName
-					case "from":
-						isValid = true
-						line.From = replaceDiacritics(tv)
-					case "to":
-						line.To = replaceDiacritics(tv)
-					case "colour":
-						line.Color = tv
-					case "ref":
-						line.Line = tv
-					case "local_ref":
-						overriddenLine = tv
-					case "website":
-						line.Link = tv
-					case "description":
-						if tv == "Rețea transportului public din Brașov (Mteropolitan)" {
-							for _, memberID := range v.Members {
-								metropolitans = append(metropolitans, memberID.ID)
-							}
-							break
-						} else if tv == "Rețea transportului public din Brașov (Urban)" {
-							for _, memberID := range v.Members {
-								urbans = append(urbans, memberID.ID)
-							}
-							break
-						}
-					}
-				}
-
-				if len(overriddenLine) > 0 {
-					line.Line = overriddenLine
-				}
-
-				if strings.Contains(line.Link, "-dus") {
-					line.Dir = 1
-				} else if strings.Contains(line.Link, "-intors") {
-					line.Dir = 2
-				}
-
-				if !isValid {
-					continue
-				}
-
-				if _, willKeep := includedBusIDs[v.ID]; !willKeep {
-					continue
-				}
-
-				_, err = bussesStmt.Exec(line.OSMID, line.Dir, line.Name, line.From, line.To, line.Line, line.Color, line.Link)
-				if err != nil {
-					if err := tx.Rollback(); err != nil {
-						t.Fatalf("error rolling back transaction on insert bus line :%#v", err)
-					}
-					t.Fatalf("error inserting bus line :%#v", err)
-				}
-
-				busses[v.ID] = &line
-				// logger.Info("bus line created", "name", line.Name, "link", line.Link)
-
-				stationIndex := 0
-				for _, member := range v.Members {
-					newMember := Member{Ref: member.ID, Role: member.Role}
-					if member.Type == osmpbf.WayType {
-						relationWays[v.ID] = append(relationWays[v.ID], newMember)
-						continue
-					}
-
-					if member.Role == OSMPlatform || member.Role == OSMPlatformEntryOnly || member.Role == OSMPlatformExitOnly {
-						_, err = stopsStmt.Exec(v.ID, member.ID, stationIndex)
-						if err != nil {
-							var sqliteErr sqlite3.Error
-							if errors.As(err, &sqliteErr) {
-								if !errors.Is(sqliteErr.Code, sqlite3.ErrConstraint) {
-									if err := tx.Rollback(); err != nil {
-										t.Fatalf("error rolling back transaction on insert bus stop :%#v", err)
-									}
-									t.Fatalf("error inserting bus stop :%#v", err)
-								}
-							}
-						}
-						station, found := stations[newMember.Ref]
-						if found {
-							stationIndex++
-							_ = station
-							// logger.Info("bus stop created", "bus", line.Name, "station", station.Name, "index", stationIndex)
-						} else {
-							logger.Warn("STATION NOT FOUND", "id", newMember.Ref, "index", stationIndex)
-						}
-						continue
-					}
-
-					if member.Type == osmpbf.NodeType && (member.Role == OSMStop || member.Role == OSMStopExitOnly || member.Role == OSMStopEntryOnly) {
-						relationStops[v.ID] = append(relationStops[v.ID], newMember)
-						continue
-					}
-
+				case "name":
+					station.Name = tv
 				}
 			}
+
+			station.Name = replaceDiacritics(station.Name)
+			_, err = stationsStmt.Exec(station.OSMID, station.Name, station.Lat, station.Lon, station.IsOutsideCity, station.HasBoard)
+			if err != nil {
+				if err := tx.Rollback(); err != nil {
+					t.Fatalf("error rolling back transaction on insert station :%#v", err)
+				}
+				t.Fatalf("error inserting station :%#v", err)
+			}
+
+			stations[station.OSMID] = &station
+			// logger.Info("station created", "name", station.Name, "metropolitan", station.IsOutsideCity)
+		case *osmpbf.Way:
+			uniqueWays[v.ID] = Node{Nodes: v.NodeIDs, ID: v.ID, Tags: v.Tags}
+		case *osmpbf.Relation:
+			if v.Tags["network"] != "RAT Brașov" {
+				continue
+			}
+
+			subRels[v.ID] = make([]int64, 0)
+			for _, member := range v.Members {
+				subRels[v.ID] = append(subRels[v.ID], member.ID)
+			}
+
+			isValid := false
+			line := Busline{OSMID: v.ID}
+
+			overriddenLine := ""
+			for k, tv := range v.Tags {
+				switch k {
+				case "name":
+					cleanName := strings.ReplaceAll(tv, "=>", "-")
+					cleanName = replaceDiacritics(cleanName)
+					line.Name = cleanName
+				case "from":
+					isValid = true
+					line.From = replaceDiacritics(tv)
+				case "to":
+					line.To = replaceDiacritics(tv)
+				case "colour":
+					line.Color = tv
+				case "ref":
+					line.Line = tv
+				case "local_ref":
+					overriddenLine = tv
+				case "website":
+					line.Link = tv
+				case "description":
+					if tv == "Rețea transportului public din Brașov (Mteropolitan)" {
+						for _, memberID := range v.Members {
+							metropolitans = append(metropolitans, memberID.ID)
+						}
+						break
+					} else if tv == "Rețea transportului public din Brașov (Urban)" {
+						for _, memberID := range v.Members {
+							urbans = append(urbans, memberID.ID)
+						}
+						break
+					}
+				}
+			}
+
+			if len(overriddenLine) > 0 {
+				line.Line = overriddenLine
+			}
+
+			if strings.Contains(line.Link, "-dus") {
+				line.Dir = 1
+			} else if strings.Contains(line.Link, "-intors") {
+				line.Dir = 2
+			}
+
+			if !isValid {
+				continue
+			}
+
+			if _, willKeep := includedBusIDs[v.ID]; !willKeep {
+				continue
+			}
+
+			_, err = bussesStmt.Exec(line.OSMID, line.Dir, line.Name, line.From, line.To, line.Line, line.Color, line.Link)
+			if err != nil {
+				if err := tx.Rollback(); err != nil {
+					t.Fatalf("error rolling back transaction on insert bus line :%#v", err)
+				}
+				t.Fatalf("error inserting bus line :%#v", err)
+			}
+
+			busses[v.ID] = &line
+			// logger.Info("bus line created", "name", line.Name, "link", line.Link)
+
+			stationIndex := 0
+			for _, member := range v.Members {
+				newMember := Member{Ref: member.ID, Role: member.Role}
+				if member.Type == osmpbf.WayType {
+					relationWays[v.ID] = append(relationWays[v.ID], newMember)
+					continue
+				}
+
+				if member.Role == OSMPlatform || member.Role == OSMPlatformEntryOnly || member.Role == OSMPlatformExitOnly {
+					_, err = stopsStmt.Exec(v.ID, member.ID, stationIndex)
+					if err != nil {
+						var sqliteErr sqlite3.Error
+						if errors.As(err, &sqliteErr) {
+							if !errors.Is(sqliteErr.Code, sqlite3.ErrConstraint) {
+								if err := tx.Rollback(); err != nil {
+									t.Fatalf("error rolling back transaction on insert bus stop :%#v", err)
+								}
+								t.Fatalf("error inserting bus stop :%#v", err)
+							}
+						}
+					}
+					station, found := stations[newMember.Ref]
+					if found {
+						stationIndex++
+						_ = station
+						// logger.Info("bus stop created", "bus", line.Name, "station", station.Name, "index", stationIndex)
+					} else {
+						logger.Warn("STATION NOT FOUND", "id", newMember.Ref, "index", stationIndex)
+					}
+					continue
+				}
+
+				if member.Type == osmpbf.NodeType && (member.Role == OSMStop || member.Role == OSMStopExitOnly || member.Role == OSMStopEntryOnly) {
+					relationStops[v.ID] = append(relationStops[v.ID], newMember)
+					continue
+				}
+
+			}
 		}
+
 	}
 
 	var collectAllChildren func([]int64) []int64

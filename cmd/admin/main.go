@@ -390,7 +390,7 @@ func GETStreetAddress(logger *slog.Logger, repo *admin.Repository) func(w http.R
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := admin.NewRepository(logger, "./data/brasov_busses.db")
+	repo, err := admin.NewRepository(logger, "./data/brasov_busses.sqlite")
 	if err != nil {
 		logger.Error("error creating repository", "err", err)
 		os.Exit(1)

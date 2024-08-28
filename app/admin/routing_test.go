@@ -79,7 +79,7 @@ func GetStationsAndBusses() (*StationsAndBusses, error) {
 		busses:   make(map[int64]*BusRoute),
 	}
 
-	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
+	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		return nil, err
 	}

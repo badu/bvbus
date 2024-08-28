@@ -42,7 +42,7 @@ func GetStationFromOverpass(stationID int64) (*Data, error) {
 }
 
 func TestGetOverpassData(t *testing.T) {
-	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
+	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error:%#v", err)
 	}
@@ -85,7 +85,7 @@ func TestGetOverpassData(t *testing.T) {
 }
 
 func TestMakeTrajectories(t *testing.T) {
-	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.db")
+	db, err := sql.Open("sqlite3", "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error:%#v", err)
 	}

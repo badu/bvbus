@@ -39,7 +39,7 @@ func TestLatestPBF(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error creating repository:%#v", err)
 	}
@@ -754,7 +754,7 @@ func TestOptimizeLines(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error creating repository:%#v", err)
 	}
@@ -834,7 +834,7 @@ func TestSetStreetNames(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error creating repository:%#v", err)
 	}
@@ -886,7 +886,7 @@ func TestSetStreetNames(t *testing.T) {
 func TestGenerateStationsJS(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error creating repository:%#v", err)
 	}
@@ -1090,7 +1090,7 @@ func TestGenerateStationsJS(t *testing.T) {
 func TestGenerateBussesJS(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error creating repository:%#v", err)
 	}
@@ -1162,7 +1162,7 @@ func TestGenerateBussesJS(t *testing.T) {
 func TestGenerateTiles(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error creating repository:%#v", err)
 	}
@@ -1294,7 +1294,7 @@ func TestGenerateTiles(t *testing.T) {
 func TestGenerateTimeTables(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	repo, err := NewRepository(logger, "./../../data/brasov_busses.db")
+	repo, err := NewRepository(logger, "./../../data/brasov_busses.sqlite")
 	if err != nil {
 		t.Fatalf("error creating repository:%#v", err)
 	}

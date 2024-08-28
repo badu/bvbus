@@ -6,7 +6,7 @@ import {service} from "@/service/index.js"
 import {pathFinding} from "@/graph.js"
 
 const toast = useToast()
-const {loadStationTimetables, loadStreetPoints, loadDirectPathFinder} = service(toast)
+const {loadStationTimetables, loadStreetPoints} = service(toast)
 const models = store()
 for (const key in models) {
   provide(key, models[key])
@@ -20,8 +20,6 @@ for (const key in calculations) {
 provide('toast', toast)
 provide('loadStreetPoints', loadStreetPoints)
 provide('loadStationTimetables', loadStationTimetables)
-provide('loadDirectPathFinder', loadDirectPathFinder)
-
 
 const getScreenInfo = () => {
   const screenWidth = window.innerWidth

@@ -6,7 +6,6 @@ const toast = inject('toast')
 
 const loadingInProgress = inject('loadingInProgress')
 
-const loadDirectPathFinder = inject('loadDirectPathFinder')
 const loadStreetPoints = inject('loadStreetPoints')
 const loadStationTimetables = inject('loadStationTimetables')
 
@@ -60,24 +59,11 @@ const getNextDepartureTimeForBusses = (currentTime, timetable, bussesIds) => {
   return null
 }
 
-const getBussesIdsBetweenStations = (startStation, endStation) => {
-  const busses = []
-  busLinesMap.forEach((value, key, map) => {
-    for (let i = 1; i < value.s.length - 1; i++) {
-      if (value.s[i - 1] === startStation && value.s[i] === endStation) {
-        busses.push(value.i)
-      }
-    }
-  })
-  return busses
-}
-
 const currentRoute = ref([])
 const selectedHop = ref(null)
 
-
 const findBestTimes = (stations, finalStation) => {
-  console.log('towards',finalStation)
+  console.log('towards', finalStation)
 
   const now = new Date()
   let currentTime = now.getHours() * 60 + now.getMinutes()
@@ -103,16 +89,35 @@ const findBestTimes = (stations, finalStation) => {
     if (stationIndex < 0) {
       const dropOffTime = getNextDepartureTime(currentTime, stations[i - 1].timetable, currentBus.i)
       console.log(`${i} drop off bus ${currentBus.n} station ${stations[i - 1].n} ${stations[i - 1].i} arrival ${dropOffTime.time}`)
-      currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: dropOffTime.time, station: stations[i-1].n, op:'hop off'})
-      const bussesIds = getBussesIdsBetweenStations(stations[i - 1].i, stations[i].i)
+      currentRoute.value.push({
+        n: currentBus.n,
+        c: currentBus.c,
+        tc: currentBus.tc,
+        time: dropOffTime.time,
+        station: stations[i - 1].n,
+        op: 'hop off'
+      })
+      const stationsKey = `${stations[i - 1].i}-${stations[i].i}`
+      if (!stationsAndBusses.has(stationsKey)) {
+        console.error("stations and busses is missing key", stationsKey)
+        return
+      }
+
+      const bussesIds = stationsAndBusses.get(stationsKey)
       const next = getNextDepartureTimeForBusses(currentTime, stations[i - 1].timetable, bussesIds)
       if (next !== null) {
         currentBus = busLinesMap.get(next.i)
         currentTime = next.minutes
         console.log(`${i} hop on bus ${currentBus.n} station ${stations[i - 1].n} ${stations[i - 1].i} arrival ${next.time}`)
-        currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: dropOffTime.time, station: stations[i-1].n, op:'hop on'})
+        currentRoute.value.push({
+          n: currentBus.n,
+          c: currentBus.c,
+          tc: currentBus.tc,
+          time: dropOffTime.time,
+          station: stations[i - 1].n,
+          op: 'hop on'
+        })
       } else {
-        // result is in "extraTimetable"
         console.error(`${i} no busses found between`, stations[i - 1].n, stations[i].n, stations[i - 1].i, stations[i].i, bussesIds)
       }
     }
@@ -128,7 +133,14 @@ const findBestTimes = (stations, finalStation) => {
     }
     currentTime = nextDepartureTime.minutes
     console.log(`${i} bus ${currentBus.n} station ${stations[i].n} ${stations[i].i} arrival ${nextDepartureTime.time}`)
-    currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: nextDepartureTime.time, station: stations[i].n, op:'ride'})
+    currentRoute.value.push({
+      n: currentBus.n,
+      c: currentBus.c,
+      tc: currentBus.tc,
+      time: nextDepartureTime.time,
+      station: stations[i].n,
+      op: 'ride'
+    })
   }
 
   edges.push({f: stations[stations.length - 1].i, t: finalStation.i, c: currentBus.c})
@@ -136,7 +148,14 @@ const findBestTimes = (stations, finalStation) => {
   const dropOffTime = getNextDepartureTime(currentTime, finalStation.timetable, currentBus.i)
   if (dropOffTime !== null) {
     console.log(`final drop off bus ${currentBus.n} station ${finalStation.n} ${finalStation.i} arrival ${dropOffTime.time}`)
-    currentRoute.value.push({n: currentBus.n, c: currentBus.c, tc: currentBus.tc, time: dropOffTime.time, station: finalStation.n, op:'hop off'})
+    currentRoute.value.push({
+      n: currentBus.n,
+      c: currentBus.c,
+      tc: currentBus.tc,
+      time: dropOffTime.time,
+      station: finalStation.n,
+      op: 'hop off'
+    })
     currentTime = dropOffTime.minutes
   } else {
     if (!currentBus.si) {
@@ -184,7 +203,7 @@ const findBestTimes = (stations, finalStation) => {
     console.log('arrival', hours, minutes)
   }
 
-  console.log('route',currentRoute.value)
+  console.log('route', currentRoute.value)
 
   return edges
 }
@@ -374,8 +393,8 @@ const onDrawerClose = () => {
           </template>
         </Column>
 
-        <Column header="Station" field="station" />
-        <Column header="Op" field="op" />
+        <Column header="Station" field="station"/>
+        <Column header="Op" field="op"/>
 
         <Column header="Time">
           <template #body="slotProps">
