@@ -59,7 +59,6 @@ const scrollToFirstValid = (currentTab, table) => {
   if (!rows || !rows[0]) {
     return
   }
-
   rows[0].scrollIntoView({behavior: 'auto'})
 }
 
