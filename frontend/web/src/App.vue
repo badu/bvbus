@@ -22,49 +22,50 @@ provide('loadStreetPoints', loadStreetPoints)
 provide('loadStationTimetables', loadStationTimetables)
 
 const getScreenInfo = () => {
-  const screenWidth = window.innerWidth
-  const screenHeight = window.innerHeight
-
-  // Get screen orientation
-  let orientation
-  if (window.screen.orientation) {
-    orientation = window.screen.orientation.type
-  } else if (window.orientation) {
-    switch (window.orientation) {
-      case 0:
-        orientation = "portrait-primary"
-        break
-      case 90:
-        orientation = "landscape-primary"
-        break
-      case -90:
-        orientation = "landscape-secondary"
-        break
-      case 180:
-        orientation = "portrait-secondary"
-        break
-      default:
-        orientation = "unknown"
-        break
-    }
-  } else {
-    orientation = "unknown"
+  if (!screen){
+    toast.add({severity: 'error', summary: "there is no screen", life: 3000})
+    return
   }
-  return {width: screenWidth, height: screenHeight, orientation: orientation}
+
+  if (screen.orientation) {
+    return {
+      width: screen.width,
+      height: screen.height,
+      availWidth: screen.availWidth,
+      availHeight: screen.availHeight,
+      orientation: screen.orientation.type,
+      angle: screen.orientation.angle
+    }
+  }
+
+  return {
+    width: screen.width,
+    height: screen.height,
+    availWidth: screen.availWidth,
+    availHeight: screen.availHeight,
+    orientation: 'unknown',
+    angle: 0
+  }
 }
 
 onMounted(async () => {
-  window.addEventListener("orientationchange", () => {
-    const {w, h, o} = getScreenInfo()
-    console.log("your device orientation", `W ${w} H ${h} O ${o}`)
-    //toast.add({severity: 'info', summary: "your device orientation", detail: `W ${w} H ${h} O ${o}`, life: 3000})
-  })
+  if (window.navigator && window.navigator.language) {
+    console.log('browser language', window.navigator.language)
+    //fetch('http://192.168.100.22:8080/log',{method:'POST', body: `language ${window.navigator.language}`})
+  }
 
-  window.addEventListener("resize", () => {
-    const {w, h, o} = getScreenInfo()
-    console.log("your device resized", `W ${w} H ${h} O ${o}`)
-    //toast.add({severity: 'info', summary: "your device resized", detail: `W ${w} H ${h} O ${o}`, life: 3000})
-  })
+  if (window.screen.orientation) {
+    window.screen.orientation.addEventListener('change', (event) => {
+      const {width, height, availWidth, availHeight, orientation, angle} = getScreenInfo()
+      console.log("your device orientation changed", `W ${width} H ${height} O ${orientation} AW ${availWidth} AH ${availHeight} angle ${angle}`)
+     // fetch('http://192.168.100.22:8080/log',{method:'POST', body: `orientation changed W = ${width} H = ${height} O = ${orientation} AW = ${availWidth} AH = ${availHeight} angle = ${angle}`})
+    })
+  }
+
+
+  const {width, height, availWidth, availHeight, orientation, angle} = getScreenInfo()
+  console.log("your device resized", `W ${width} H ${height} O ${orientation} AW ${availWidth} AH ${availHeight} angle ${angle}`)
+  //fetch('http://192.168.100.22:8080/log',{method:'POST', body: `screen info W = ${width} H = ${height} O = ${orientation} AW = ${availWidth} AH = ${availHeight} angle = ${angle}`})
 
   // TODO : solve the loading with Worker
   /**

@@ -14,7 +14,7 @@
     "ol-ext": "^4.0.18",
     "primeicons": "^7.0.0",
     "primevue": "^4.0.0-rc.2",
-    "vue": "^3.4.30"
+    "vue": "^3.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
